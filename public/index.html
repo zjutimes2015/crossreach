@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CrossReach — AI Outbound Agent for Cross-Border Sales</title>
+  <meta name="description" content="The AI sales agent that finds buyers, orchestrates WhatsApp + LinkedIn + Email sequences, and books meetings — built for Chinese exporters." />
+  <style>
+    :root {
+      --bg: #0a0f1a;
+      --bg-alt: #0f1623;
+      --surface: #161e2e;
+      --surface-hover: #1c2536;
+      --border: #243049;
+      --text: #e8edf5;
+      --text-dim: #8a96ab;
+      --text-mute: #5a6478;
+      --accent: #00e5a0;
+      --accent-dim: #00b380;
+      --accent-glow: rgba(0, 229, 160, 0.15);
+      --whatsapp: #25d366;
+      --linkedin: #0a66c2;
+      --email: #ff8a3d;
+      --gradient: linear-gradient(135deg, #00e5a0 0%, #00b380 100%);
+      --gradient-text: linear-gradient(135deg, #00e5a0 0%, #5eead4 100%);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── Nav ─────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(10, 15, 26, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      transition: all 0.3s;
+    }
+    nav .container { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; }
+    .logo-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: var(--gradient);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .nav-links { display: flex; align-items: center; gap: 32px; }
+    .nav-links a { color: var(--text-dim); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 14px;
+      text-decoration: none; cursor: pointer; border: none; transition: all 0.2s;
+    }
+    .btn-primary { background: var(--gradient); color: #001b12; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px var(--accent-glow); }
+    .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Hero ────────────────────────────────────────── */
+    .hero { padding: 140px 0 80px; position: relative; overflow: hidden; }
+    .hero::before {
+      content: ''; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
+      width: 800px; height: 800px; border-radius: 50%;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .hero .container { position: relative; text-align: center; }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 16px; border-radius: 100px;
+      background: var(--surface); border: 1px solid var(--border);
+      font-size: 13px; color: var(--accent); font-weight: 500;
+      margin-bottom: 24px;
+    }
+    .hero-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    h1 {
+      font-size: clamp(36px, 5vw, 56px); font-weight: 800; line-height: 1.1;
+      letter-spacing: -0.02em; margin-bottom: 24px; max-width: 800px; margin-left: auto; margin-right: auto;
+    }
+    .hero h1 .grad { background: var(--gradient-text); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .hero p.lead { font-size: 19px; color: var(--text-dim); max-width: 620px; margin: 0 auto 36px; }
+    .hero-cta { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .hero-cta .btn { padding: 14px 28px; font-size: 15px; }
+    .hero-stats { display: flex; gap: 48px; justify-content: center; margin-top: 64px; flex-wrap: wrap; }
+    .stat { text-align: center; }
+    .stat .num { font-size: 32px; font-weight: 800; color: var(--accent); }
+    .stat .label { font-size: 13px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ── Sequence visualization ───────────────────────── */
+    .section { padding: 80px 0; }
+    .section-header { text-align: center; margin-bottom: 56px; }
+    .section-header .eyebrow { color: var(--accent); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+    .section-header h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px; }
+    .section-header p { color: var(--text-dim); font-size: 17px; max-width: 600px; margin: 0 auto; }
+
+    .sequence-demo {
+      background: var(--bg-alt); border: 1px solid var(--border);
+      border-radius: 16px; padding: 48px; overflow: hidden;
+    }
+    .sequence-timeline { position: relative; display: flex; gap: 24px; overflow-x: auto; padding-bottom: 16px; }
+    .seq-step {
+      flex: 0 0 240px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 24px; position: relative;
+      transition: all 0.3s;
+    }
+    .seq-step:hover { transform: translateY(-4px); border-color: var(--accent-dim); }
+    .seq-step .day { font-size: 12px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }
+    .seq-step .channel-icon {
+      width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      font-size: 20px; margin-bottom: 16px;
+    }
+    .seq-step .channel-icon.wa { background: rgba(37, 211, 102, 0.15); }
+    .seq-step .channel-icon.li { background: rgba(10, 102, 194, 0.15); }
+    .seq-step .channel-icon.em { background: rgba(255, 138, 61, 0.15); }
+    .seq-step h4 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+    .seq-step p { font-size: 13px; color: var(--text-dim); }
+    .seq-step .arrow { position: absolute; right: -20px; top: 50%; transform: translateY(-50%); color: var(--text-mute); font-size: 20px; z-index: 1; }
+    .seq-step:last-child .arrow { display: none; }
+
+    /* ── Features grid ───────────────────────────────── */
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    .feature-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 32px; transition: all 0.3s;
+    }
+    .feature-card:hover { border-color: var(--accent-dim); background: var(--surface-hover); }
+    .feature-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-glow); display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 20px; }
+    .feature-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+    .feature-card p { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
+
+    /* ── Code/terminal block ─────────────────────────── */
+    .code-block {
+      background: var(--bg-alt); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden; margin-top: 32px;
+    }
+    .code-header { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .code-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .code-dot.r { background: #ff5f57; } .code-dot.y { background: #febc2e; } .code-dot.g { background: #28c840; }
+    .code-header span { margin-left: 8px; font-size: 13px; color: var(--text-mute); font-family: monospace; }
+    pre { padding: 24px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
+    pre code { font-family: 'SF Mono', 'Fira Code', monospace; color: var(--text-dim); }
+    .kw { color: #c792ea; } .str { color: var(--accent); } .com { color: var(--text-mute); }
+
+    /* ── Pricing ─────────────────────────────────────── */
+    .pricing-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .price-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 32px 24px; text-align: center; position: relative;
+      transition: all 0.3s;
+    }
+    .price-card.popular { border-color: var(--accent); box-shadow: 0 0 40px var(--accent-glow); }
+    .price-card.popular::before {
+      content: 'Most Popular'; position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      background: var(--gradient); color: #001b12; font-size: 11px; font-weight: 700;
+      padding: 4px 12px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .price-card .plan-name { font-size: 14px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .price-card .price { font-size: 36px; font-weight: 800; margin-bottom: 4px; }
+    .price-card .price small { font-size: 14px; color: var(--text-mute); font-weight: 400; }
+    .price-card .desc { font-size: 13px; color: var(--text-mute); margin-bottom: 24px; }
+    .price-card ul { list-style: none; text-align: left; margin-bottom: 24px; }
+    .price-card li { font-size: 13px; color: var(--text-dim); padding: 6px 0; padding-left: 24px; position: relative; }
+    .price-card li::before { content: '✓'; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+    .price-card li.off { color: var(--text-mute); }
+    .price-card li.off::before { content: '—'; color: var(--text-mute); }
+
+    /* ── CTA ─────────────────────────────────────────── */
+    .cta-section {
+      background: var(--bg-alt); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      padding: 80px 0; text-align: center;
+    }
+    .cta-section h2 { font-size: 32px; font-weight: 800; margin-bottom: 16px; }
+    .cta-section p { color: var(--text-dim); margin-bottom: 32px; font-size: 17px; }
+
+    /* ── Footer ──────────────────────────────────────── */
+    footer { padding: 48px 0 32px; border-top: 1px solid var(--border); }
+    footer .container { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 32px; }
+    footer .brand { max-width: 300px; }
+    footer .brand p { color: var(--text-mute); font-size: 13px; margin-top: 12px; }
+    footer .links { display: flex; gap: 64px; flex-wrap: wrap; }
+    footer .links h5 { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    footer .links a { display: block; color: var(--text-dim); text-decoration: none; font-size: 13px; padding: 4px 0; }
+    footer .links a:hover { color: var(--accent); }
+    .copyright { text-align: center; color: var(--text-mute); font-size: 12px; padding-top: 32px; border-top: 1px solid var(--border); margin-top: 32px; }
+
+    /* ── Responsive ──────────────────────────────────── */
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .features-grid, .pricing-grid { grid-template-columns: 1fr; }
+      .hero-stats { gap: 24px; }
+      .sequence-timeline { flex-direction: column; }
+      .seq-step .arrow { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ────────────────────────────────────────── -->
+<nav>
+  <div class="container">
+    <a href="#" class="logo">
+      <div class="logo-icon">↗</div>
+      CrossReach
+    </a>
+    <div class="nav-links">
+      <a href="#sequence">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://github.com" target="_blank">GitHub</a>
+    </div>
+    <a href="#pricing" class="btn btn-primary">Start Free</a>
+  </div>
+</nav>
+
+<!-- ── Hero ────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">
+      <span class="dot"></span>
+      AI Outbound Agent for Cross-Border Sales
+    </div>
+    <h1>
+      Find buyers. Warm them up across <span class="grad">WhatsApp + LinkedIn + Email</span>. Book meetings.
+    </h1>
+    <p class="lead">
+      CrossReach is the AI sales agent built for Chinese exporters. It orchestrates multi-channel sequences,
+      generates personalized outreach, and engages real buyers — so you only step in when they're ready to buy.
+    </p>
+    <div class="hero-cta">
+      <a href="#pricing" class="btn btn-primary">Start Free — 300 credits</a>
+      <a href="#sequence" class="btn btn-ghost">See how it works ↓</a>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><div class="num">3×</div><div class="label">Higher reply rate</div></div>
+      <div class="stat"><div class="num">5</div><div class="label">Touchpoints, zero manual work</div></div>
+      <div class="stat"><div class="num">24/7</div><div class="label">AI auto-engagement</div></div>
+      <div class="stat"><div class="num">1</div><div class="label">Unified conversation thread</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Sequence Demo ───────────────────────────────── -->
+<section class="section" id="sequence">
+  <div class="container">
+    <div class="section-header">
+      <div class="eyebrow">The omnichannel sequence</div>
+      <h2>One prospect. Three channels. One conversation.</h2>
+      <p>Your AI agent doesn't just blast emails. It orchestrates a natural, multi-touch experience that mirrors how real relationships form.</p>
+    </div>
+    <div class="sequence-demo">
+      <div class="sequence-timeline">
+        <div class="seq-step">
+          <div class="day">Day 1</div>
+          <div class="channel-icon em">✉</div>
+          <h4>Warm email</h4>
+          <p>AI-generated intro based on their company + intent signals</p>
+          <div class="arrow">→</div>
+        </div>
+        <div class="seq-step">
+          <div class="day">Day 2</div>
+          <div class="channel-icon li">in</div>
+          <h4>LinkedIn: like posts</h4>
+          <p>Engage with their recent content — warm up the name</p>
+          <div class="arrow">→</div>
+        </div>
+        <div class="seq-step">
+          <div class="day">Day 3</div>
+          <div class="channel-icon li">in</div>
+          <h4>LinkedIn: connect</h4>
+          <p>Send connection request with a contextual note</p>
+          <div class="arrow">→</div>
+        </div>
+        <div class="seq-step">
+          <div class="day">Day 5</div>
+          <div class="channel-icon wa">✆</div>
+          <h4>WhatsApp follow-up</h4>
+          <p>Casual, personal message referencing all prior context</p>
+          <div class="arrow">→</div>
+        </div>
+        <div class="seq-step">
+          <div class="day">Day 7</div>
+          <div class="channel-icon wa">✓</div>
+          <h4>Meeting booked</h4>
+          <p>Prospect already feels familiar with you before the call</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Features ────────────────────────────────────── -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-header">
+      <div class="eyebrow">Core features</div>
+      <h2>Your AI agent handles the work between target and booked meeting.</h2>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🎯</div>
+        <h3>Live Signal Targeting</h3>
+        <p>Describe your ICP. CrossReach discovers matching companies from live market signals — so every outreach is based on what's happening now, not stale data.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔗</div>
+        <h3>Cross-Channel Sequences</h3>
+        <p>Each step targets a different channel: email warm-up → LinkedIn engagement → WhatsApp close. One unified conversation thread across all of them.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>AI Content Generation</h3>
+        <p>The agent learns your company, value prop, and examples — then writes personalized outreach for each prospect. No more mass templates.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📥</div>
+        <h3>Ad Lead Auto-Enrollment</h3>
+        <p>Facebook, TikTok, and Google lead forms feed directly into WhatsApp sequences. New leads get an instant welcome — 24/7, zero latency.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Smart Routing</h3>
+        <p>Round-robin, least-load, dedicated, or skill-based assignment. New conversations auto-route to the right agent the moment they arrive.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <h3>Unified Customer Profile</h3>
+        <p>Every touchpoint — WhatsApp, email, LinkedIn, ad click — merges into one customer record with a full timeline. No more silos.</p>
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dot r"></div><div class="code-dot y"></div><div class="code-dot g"></div>
+        <span>POST /api/sequences — create a cross-channel sequence</span>
+      </div>
+<pre><code><span class="com">// Day 1: email warm-up → Day 2: LinkedIn like → Day 5: WhatsApp close</span>
+<span class="kw">POST</span> /api/sequences
+{
+  <span class="str">"name"</span>: <span class="str">"Cross-border outbound — 3 channels"</span>,
+  <span class="str">"steps"</span>: [
+    { <span class="str">"stepNumber"</span>: 1, <span class="str">"actionType"</span>: <span class="str">"SEND_AI_OUTREACH"</span>, <span class="str">"channelId"</span>: <span class="str">"email-ch-id"</span>, <span class="str">"delayMinutes"</span>: 0 },
+    { <span class="str">"stepNumber"</span>: 2, <span class="str">"actionType"</span>: <span class="str">"LINKEDIN_LIKE"</span>,    <span class="str">"delayMinutes"</span>: 1440 },
+    { <span class="str">"stepNumber"</span>: 3, <span class="str">"actionType"</span>: <span class="str">"LINKEDIN_CONNECT"</span>, <span class="str">"delayMinutes"</span>: 1440 },
+    { <span class="str">"stepNumber"</span>: 4, <span class="str">"actionType"</span>: <span class="str">"SEND_AI_OUTREACH"</span>, <span class="str">"channelId"</span>: <span class="str">"wa-ch-id"</span>,   <span class="str">"delayMinutes"</span>: 2880 }
+  ]
+}
+
+<span class="com">// Enroll a prospect → the agent handles the rest, stops if they reply</span>
+<span class="kw">POST</span> /api/sequences/<span class="str">{id}</span>/enroll  { <span class="str">"customerId"</span>: <span class="str">"cx_abc123"</span> }</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Pricing ─────────────────────────────────────── -->
+<section class="section" id="pricing">
+  <div class="container">
+    <div class="section-header">
+      <div class="eyebrow">Pricing</div>
+      <h2>Cheaper than another hire. Productive from day one.</h2>
+      <p>Credit-based pricing — you only pay for enrichment and outreach that actually happens.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="plan-name">Free</div>
+        <div class="price">$0<small>/mo</small></div>
+        <div class="desc">Try CrossReach</div>
+        <ul>
+          <li>300 monthly credits</li>
+          <li>25 leads per list</li>
+          <li>Lead intelligence</li>
+          <li>WhatsApp campaigns</li>
+          <li class="off">LinkedIn campaigns</li>
+          <li class="off">Connected channels</li>
+        </ul>
+        <a href="#" class="btn btn-ghost" style="width:100%">Start Free</a>
+      </div>
+      <div class="price-card">
+        <div class="plan-name">Starter</div>
+        <div class="price">$49<small>/mo</small></div>
+        <div class="desc">Solo founder</div>
+        <ul>
+          <li>5,000 monthly credits</li>
+          <li>~$0.06 per lead</li>
+          <li>100 leads per list</li>
+          <li>WhatsApp + email campaigns</li>
+          <li>AI content generation</li>
+          <li>1 connected inbox</li>
+        </ul>
+        <a href="#" class="btn btn-ghost" style="width:100%">Subscribe</a>
+      </div>
+      <div class="price-card popular">
+        <div class="plan-name">Scale</div>
+        <div class="price">$99<small>/mo</small></div>
+        <div class="desc">Growing team</div>
+        <ul>
+          <li>12,000 monthly credits</li>
+          <li>~$0.05 per lead</li>
+          <li>500 leads per list</li>
+          <li>All channel campaigns</li>
+          <li>AI + cross-channel sequences</li>
+          <li>1 social + 1 inbox</li>
+        </ul>
+        <a href="#" class="btn btn-primary" style="width:100%">Subscribe</a>
+      </div>
+      <div class="price-card">
+        <div class="plan-name">Pro</div>
+        <div class="price">$199<small>/mo</small></div>
+        <div class="desc">Full sales engine</div>
+        <ul>
+          <li>30,000 monthly credits</li>
+          <li>~$0.04 per lead</li>
+          <li>1,000 leads per list</li>
+          <li>Unlimited sequences</li>
+          <li>Priority AI generation</li>
+          <li>2 social + 1 inbox</li>
+        </ul>
+        <a href="#" class="btn btn-ghost" style="width:100%">Subscribe</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ─────────────────────────────────────────── -->
+<section class="cta-section">
+  <div class="container">
+    <h2>Stop managing tools. Start closing deals.</h2>
+    <p>Describe your target market and let CrossReach handle the rest — from first touch to booked meeting.</p>
+    <a href="#pricing" class="btn btn-primary" style="padding:16px 36px;font-size:16px">Hire your AI agent — Free</a>
+  </div>
+</section>
+
+<!-- ── Footer ──────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <div class="brand">
+      <a href="#" class="logo"><div class="logo-icon">↗</div> CrossReach</a>
+      <p>The AI outbound agent for cross-border sales. Built for Chinese exporters reaching global buyers via WhatsApp.</p>
+    </div>
+    <div class="links">
+      <div>
+        <h5>Product</h5>
+        <a href="#sequence">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+      </div>
+      <div>
+        <h5>Channels</h5>
+        <a href="#">WhatsApp</a>
+        <a href="#">LinkedIn</a>
+        <a href="#">Email</a>
+        <a href="#">Instagram</a>
+      </div>
+      <div>
+        <h5>Company</h5>
+        <a href="#">About</a>
+        <a href="#">Blog</a>
+        <a href="https://github.com">GitHub</a>
+        <a href="#">Contact</a>
+      </div>
+    </div>
+  </div>
+  <div class="container">
+    <div class="copyright">© 2026 CrossReach. Deployed on overseas infrastructure for WhatsApp API access.</div>
+  </div>
+</footer>
+
+</body>
+</html>

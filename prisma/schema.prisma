@@ -1,0 +1,493 @@
+// CrossReach — Multi-tenant cross-border customer acquisition platform
+// Prisma schema: defines tenants, channels, unified customer profiles, conversations, messages
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Multi-tenant ──────────────────────────────────────────────────────────
+
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  plan      Plan         @default(STARTER)
+  status    TenantStatus @default(TRIAL)
+  apiKey    String       @unique @default(cuid())
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users         User[]
+  channels      Channel[]
+  customers     Customer[]
+  conversations Conversation[]
+  skillGroups   SkillGroup[]
+  routingRules  RoutingRule[]
+  leadSources   LeadSource[]
+  campaigns     Campaign[]
+  sequences     Sequence[]
+  aiContentTemplates AIContentTemplate[]
+
+  @@map("tenants")
+}
+
+enum Plan {
+  STARTER
+  GROWTH
+  PRO
+  ENTERPRISE
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email     String   @unique
+  name      String
+  role      UserRole @default(AGENT)
+  password  String
+  // Routing: agent skills (e.g. ["english", "presales"]) and availability
+  skills    String[] @default([])
+  isOnline  Boolean  @default(true)
+  // Round-robin cursor (incremented each assignment, mod agent count)
+  rrCursor  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  assignedConversations Conversation[] @relation("AgentAssignments")
+  skillGroups           SkillGroup[]
+  routingRules          RoutingRule[]   @relation("RuleTargetAgent")
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+// ── Channel Configuration ─────────────────────────────────────────────────
+
+model Channel {
+  id       String      @id @default(cuid())
+  tenantId String
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type     ChannelType
+  name     String
+  // Channel-specific config: phone_number_id, access_token, verify_token, etc.
+  config   Json
+  isActive Boolean     @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  conversations Conversation[]
+  campaigns     Campaign[]
+  sequences     Sequence[]
+  sequenceSteps SequenceStep[]
+
+  @@unique([tenantId, type])
+  @@index([tenantId])
+  @@map("channels")
+}
+
+enum ChannelType {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+  LINE
+  TELEGRAM
+  EMAIL
+  WEB_CHAT
+}
+
+// ── Unified Customer Profile (CDP) ────────────────────────────────────────
+
+model Customer {
+  id         String         @id @default(cuid())
+  tenantId   String
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // External ID from the source channel (e.g. WhatsApp phone number, IG PSID)
+  externalId String
+  name       String?
+  email      String?
+  phone      String?
+  avatarUrl  String?
+  source     String?
+  tags       String[]
+  stage      CustomerStage  @default(NEW)
+  attributes Json?
+  lastSeenAt DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  conversations       Conversation[]
+  messages            Message[]
+  campaignRecipients  CampaignRecipient[]
+  sequenceEnrollments SequenceEnrollment[]
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId])
+  @@index([tenantId, stage])
+  @@map("customers")
+}
+
+enum CustomerStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  WON
+  LOST
+}
+
+// ── Conversations & Messages ──────────────────────────────────────────────
+
+model Conversation {
+  id           String             @id @default(cuid())
+  tenantId     String
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerId   String
+  customer     Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channelId    String
+  channel      Channel            @relation(fields: [channelId], references: [id])
+  status       ConversationStatus @default(OPEN)
+  assigneeId   String?
+  assignee     User?              @relation("AgentAssignments", fields: [assigneeId], references: [id])
+  lastMessageAt DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  messages Message[]
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([assigneeId])
+  @@index([tenantId, status])
+  @@map("conversations")
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+}
+
+model Message {
+  id             String          @id @default(cuid())
+  tenantId       String
+  conversationId String
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  customerId     String
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  direction      MessageDirection
+  type           MessageType     @default(TEXT)
+  // Unified content: { text: "..." } or { mediaId: "...", caption: "..." } etc.
+  content        Json
+  // Original raw payload from the channel (for debugging / replay)
+  rawPayload     Json?
+  status         MessageStatus   @default(SENT)
+  createdAt      DateTime        @default(now())
+
+  @@index([conversationId])
+  @@index([customerId])
+  @@index([tenantId])
+  @@index([tenantId, direction])
+  @@map("messages")
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  LOCATION
+  TEMPLATE
+  INTERACTIVE
+  SYSTEM
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+// ── Smart Routing ─────────────────────────────────────────────────────────
+
+model SkillGroup {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  skills    String[] @default([])
+  members   User[]
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("skill_groups")
+}
+
+model RoutingRule {
+  id          String       @id @default(cuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  priority    Int          @default(100) // lower = evaluated first
+  matchType   MatchType
+  matchValue  String       // e.g. "WHATSAPP", "vip", "facebook_lead"
+  strategy    AssignStrategy
+  targetAgentId String?
+  targetAgent User?        @relation("RuleTargetAgent", fields: [targetAgentId], references: [id])
+  targetSkillGroupId String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, priority])
+  @@map("routing_rules")
+}
+
+enum MatchType {
+  CHANNEL_TYPE // match by conversation channel type
+  CUSTOMER_TAG // match by customer tag
+  KEYWORD      // match by inbound message keyword
+  SOURCE       // match by customer source (e.g. facebook_lead)
+  LANGUAGE     // match by customer language attribute
+  CATCH_ALL    // default fallback rule
+}
+
+enum AssignStrategy {
+  ROUND_ROBIN  // cycle through available agents in a group
+  LEAST_LOAD   // assign to agent with fewest open conversations
+  DEDICATED    // always assign to targetAgentId
+  SKILL_BASED  // match agents by skills in a skill group
+}
+
+// ── Growth / 拓客自动化 ────────────────────────────────────────────────────
+
+model LeadSource {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  platform    LeadPlatform
+  name        String
+  // Webhook verification token for this lead source
+  verifyToken String
+  // Config: form_id, page_id, ad_account_id, etc.
+  config      Json
+  // Auto-enroll new leads into this sequence
+  autoSequenceId String?
+  // Welcome template to send immediately on lead arrival
+  welcomeTemplate  String?
+  welcomeLanguage  String? @default("en_US")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("lead_sources")
+}
+
+enum LeadPlatform {
+  FACEBOOK
+  TIKTOK
+  GOOGLE
+  CUSTOM
+}
+
+model Campaign {
+  id           String         @id @default(cuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  channelId    String
+  channel      Channel        @relation(fields: [channelId], references: [id])
+  templateName String
+  language     String         @default("en_US")
+  components   Json?
+  // Recipient filter: { stage: "NEW", tags: ["vip"], source: "facebook_lead" }
+  filter       Json
+  status       CampaignStatus @default(DRAFT)
+  totalRecipients Int         @default(0)
+  sentCount    Int            @default(0)
+  failedCount  Int            @default(0)
+  createdAt    DateTime       @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+
+  recipients   CampaignRecipient[]
+
+  @@index([tenantId])
+  @@map("campaigns")
+}
+
+enum CampaignStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  PAUSED
+}
+
+model CampaignRecipient {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  tenantId    String
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status      CampaignRecipientStatus @default(PENDING)
+  externalMessageId String?
+  sentAt      DateTime?
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([campaignId])
+  @@index([customerId])
+  @@map("campaign_recipients")
+}
+
+enum CampaignRecipientStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model Sequence {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  // Default channel; individual steps can override via step.channelId
+  channelId   String?
+  channel     Channel?  @relation(fields: [channelId], references: [id])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  steps       SequenceStep[]
+  enrollments SequenceEnrollment[]
+
+  @@index([tenantId])
+  @@map("sequences")
+}
+
+model SequenceStep {
+  id          String   @id @default(cuid())
+  sequenceId  String
+  sequence    Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  stepNumber  Int      // 1-based step order
+  // Delay before this step fires (relative to previous step completion)
+  delayMinutes Int
+
+  // ── Cross-channel orchestration ──────────────────────────────────────
+  // Each step can target a different channel. Falls back to sequence.channelId.
+  channelId   String?
+  channel     Channel? @relation(fields: [channelId], references: [id])
+  // What this step does: send a WhatsApp template, LinkedIn like, email, etc.
+  actionType  StepActionType @default(SEND_TEMPLATE)
+
+  // ── Content (used when actionType = SEND_TEMPLATE / SEND_EMAIL) ───────
+  templateName String?
+  language     String  @default("en_US")
+  components   Json?
+  // For email steps: subject + body (rendered via AI or static)
+  emailSubject String?
+  emailBody    String?
+  // For LinkedIn action steps: target profile URL or search query
+  linkedinTarget String?
+
+  // ── AI generation (when actionType = SEND_AI_OUTREACH) ───────────────
+  // Reference to a prompt template that produces personalized content
+  aiTemplateId String?
+  aiTemplate   AIContentTemplate? @relation(fields: [aiTemplateId], references: [id])
+
+  // Stop sequence if customer has replied on ANY channel by step due time
+  stopIfReplied Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  enrollmentsDue SequenceEnrollment[] @relation("EnrollmentCurrentStep")
+
+  @@index([sequenceId])
+  @@map("sequence_steps")
+}
+
+enum StepActionType {
+  SEND_TEMPLATE      // WhatsApp/Messenger template message
+  SEND_AI_OUTREACH   // AI-generated personalized outreach
+  SEND_EMAIL         // Plain email (subject + body)
+  LINKEDIN_LIKE      // Engage with prospect's recent posts
+  LINKEDIN_CONNECT   // Send connection request with note
+  LINKEDIN_MESSAGE   // Send a LinkedIn DM
+  WAIT               // Pure delay, no action (used for spacing)
+}
+
+// ── AI Outreach Content Templates ─────────────────────────────────────────
+// Stores the prompt + variables used to generate personalized outreach.
+model AIContentTemplate {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  // Channel this template is optimized for (affects length/tone)
+  channel     ChannelType
+  // System prompt with {{variables}} (e.g. {{prospect_name}}, {{company}}, {{pain_point}})
+  systemPrompt String
+  // User prompt template (the actual generation instruction)
+  userPrompt   String
+  // Default language for generated content
+  language     String  @default("en_US")
+  // Max tokens for the generated message
+  maxTokens    Int     @default(200)
+  createdAt    DateTime @default(now())
+
+  sequenceSteps SequenceStep[]
+
+  @@index([tenantId])
+  @@map("ai_content_templates")
+}
+
+model SequenceEnrollment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  sequenceId  String
+  sequence    Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  currentStepId String?
+  currentStep SequenceStep? @relation("EnrollmentCurrentStep", fields: [currentStepId], references: [id])
+  status      EnrollmentStatus @default(ACTIVE)
+  enrolledAt  DateTime @default(now())
+  nextStepAt  DateTime?
+  completedAt DateTime?
+
+  @@index([sequenceId])
+  @@index([customerId])
+  @@index([tenantId, status])
+  @@index([nextStepAt])
+  @@map("sequence_enrollments")
+}
+
+enum EnrollmentStatus {
+  ACTIVE     // steps still pending
+  COMPLETED  // all steps executed
+  STOPPED    // customer replied or manually stopped
+}
