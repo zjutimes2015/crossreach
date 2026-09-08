@@ -48,7 +48,7 @@ export async function connectRoutes(server: FastifyInstance) {
   server.get('/v1/connect/accounts', async (req: FastifyRequest, reply: FastifyReply) => {
     const tenant = req.tenant!;
     const q = req.query as { channel?: ConnectChannelType; status?: ConnectAccountStatus };
-    const result = await listConnectAccounts(tenant.id, q);
+    const result = await listConnectAccounts(tenant.id, tenant.plan, q);
     return reply.send({ ok: true, ...result });
   });
 

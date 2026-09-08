@@ -9,6 +9,8 @@ export interface PlanDefinition {
   plan: Plan;
   label: string;
   monthlyCredits: number;
+  // Monthly subscription price in USD cents (null = custom quote)
+  monthlyPriceCents: number | null;
   // Allowed prospect-list sizes (Revor never silently reduces a request)
   allowedListSizes: number[];
   // Max connected email inboxes
@@ -24,6 +26,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     plan: 'STARTER',
     label: 'Starter',
     monthlyCredits: 5000,
+    monthlyPriceCents: 4900,
     allowedListSizes: [25, 100],
     emailInboxes: 1,
     socialChannels: 0,
@@ -33,6 +36,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     plan: 'GROWTH',
     label: 'Scale',
     monthlyCredits: 12000,
+    monthlyPriceCents: 9900,
     allowedListSizes: [25, 100, 500],
     emailInboxes: 1,
     socialChannels: 1,
@@ -42,6 +46,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     plan: 'PRO',
     label: 'Pro',
     monthlyCredits: 30000,
+    monthlyPriceCents: 19900,
     allowedListSizes: [25, 100, 500, 1000],
     emailInboxes: 1,
     socialChannels: 2,
@@ -51,6 +56,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     plan: 'ENTERPRISE',
     label: 'Enterprise',
     monthlyCredits: 100000,
+    monthlyPriceCents: null,
     allowedListSizes: [25, 100, 500, 1000],
     emailInboxes: 99,
     socialChannels: 99,
@@ -64,6 +70,7 @@ export const FREE_PLAN: PlanDefinition = {
   plan: 'STARTER',
   label: 'Free',
   monthlyCredits: 300,
+  monthlyPriceCents: 0,
   allowedListSizes: [25],
   emailInboxes: 0,
   socialChannels: 0,

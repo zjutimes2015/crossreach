@@ -39,6 +39,10 @@ model Tenant {
   creditBalance CreditBalance?
   creditTransactions CreditTransaction[]
   usageEvents   UsageEvent[]
+  stripeCustomers StripeCustomer[]
+  crmIntegrations CrmIntegration[]
+  webhookEvents  WebhookEvent[]
+  paymentEvents  PaymentEvent[]
 
   @@map("tenants")
 }
@@ -801,4 +805,85 @@ enum DiscoveryJobStatus {
   SUCCEEDED  // result + billing ready
   FAILED     // failed, includes public error code
   CANCELLED  // cancelled by user
+}
+
+// ── Stripe Billing Integration ──────────────────────────────────────────────
+// Links a Stripe Customer to a CrossReach tenant. Used by Checkout sessions
+// and recurring-subscription webhooks to reconcile payments into credits.
+
+model StripeCustomer {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stripeCustomerId String?
+  status          String   @default("created") // created | paid | trialing | past_due | cancelled
+  lastSessionId   String?
+  lastPlanId      String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("stripe_customers")
+}
+
+// ── Payment events (ledger from Stripe or other PSPs) ──────────────────────
+
+model PaymentEvent {
+  id               String   @id @default(cuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider         String   // STRIPE | TEST
+  providerEventId  String?
+  eventKind        String   // CHECKOUT_COMPLETE | INVOICE_PAID | INVOICE_FAILED | TOPUP
+  amount           Int      @default(0) // in provider minor units (cents)
+  currency         String   @default("usd")
+  success          Boolean  @default(false)
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@map("payment_events")
+}
+
+// ── CRM integrations (HubSpot / Salesforce / Notion) ───────────────────────
+// Maps a CRM object id → CrossReach tenant, enabling inbound webhook routing.
+
+model CrmIntegration {
+  id         String  @id @default(cuid())
+  tenantId   String
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  crm        String  // HUBSPOT | SALESFORCE | NOTION
+  externalId String  // deal/contact id in the CRM
+  active     Boolean @default(true)
+  config     Json?   // webhook signing secret, portal id, etc.
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([crm, externalId])
+  @@index([tenantId])
+  @@map("crm_integrations")
+}
+
+// ── Inbound CRM webhook event log ──────────────────────────────────────────
+
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source      String    // HUBSPOT | SALESFORCE | NOTION
+  externalId  String
+  kind        String    // deal.created | contact.updated | ...
+  payload     Json?
+  rawPayload  Json?
+  processed   Boolean   @default(false)
+  processedAt DateTime?
+  retryCount  Int       @default(0)
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, source, processed])
+  @@index([tenantId, createdAt])
+  @@map("webhook_events")
 }

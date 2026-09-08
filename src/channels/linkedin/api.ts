@@ -1,14 +1,23 @@
-// ── LinkedIn adapter (session-based, Playwright-ready) ─────────────────────
-// Connect account config shape:
-//   { sessionCookie, profileUrl, cookiesPath }
+// ── LinkedIn adapter (session-based, Playwright automation) ──────────────────
+// Connect account config shape: { sessionCookie, profileUrl, cookiesPath }
 //
-// LinkedIn automation requires a browser session (no official outbound API).
-// Production: drive Playwright with the stored session cookie.
-// MVP: stub that records intent + returns a queued result so the dispatch
-// pipeline and job-status API work end-to-end. The Playwright execution
-// layer plugs in here without touching the rest of the system.
+// Execution strategy (mirrors Revor):
+//   - Send a DM when the prospect is already connected (message).
+//   - Otherwise send a connection request with a personalized note (invitation).
+//   - likeRelevantPost likes the prospect's most recent public post (warm-up).
+//
+// The actual browser automation lives in playwright.ts. This file is the
+// channel boundary consumed by modules/outreach/dispatch.ts and the
+// connect-account test-connection flow.
 
 import { logger } from '../../utils/logger.js';
+import {
+  sendMessage,
+  sendInvitation,
+  likeRelevantPost as playwrightLike,
+} from './playwright.js';
+
+// ── Types shared with playwright.ts & dispatch.ts ───────────────────────────
 
 export interface LinkedInAccountConfig {
   sessionCookie: string;
@@ -16,22 +25,16 @@ export interface LinkedInAccountConfig {
   cookiesPath?: string;
 }
 
-export type LinkedInAction =
-  | 'message'        // send a DM (already connected)
-  | 'invitation'     // send a connection request with a note
-  | 'post_like';     // like the most relevant recent post
+export type LinkedInAction = 'message' | 'invitation' | 'post_like';
 
 export interface LinkedInRecipient {
   profileUrl: string;
+  firstName?: string;
 }
 
 export interface LinkedInContent {
   text?: string;
-  attachments?: Array<{
-    filename: string;
-    contentBase64: string;
-    contentType?: string;
-  }>;
+  attachments?: Array<{ filename: string; contentBase64: string; contentType?: string }>;
 }
 
 export interface LinkedInSendResult {
@@ -40,65 +43,47 @@ export interface LinkedInSendResult {
   error?: string;
 }
 
-/**
- * Resolve which LinkedIn action to perform.
- * Revor's logic: send a message if already connected, otherwise send an
- * invitation when appropriate.
- */
+/** Provisional action selection — refined by the Playwright layer using the
+ *  live connection state seen on the profile page. */
 export function resolveAction(): LinkedInAction {
-  // MVP: always attempt a message. In production, Playwright checks the
-  // connection state on the profile page and downgrades to invitation.
   return 'message';
 }
 
 /**
- * Execute a LinkedIn action.
- * MVP: stub that logs intent and returns accepted, so the outreach job
- * completes and can be polled via GET /api/v1/outreach/jobs/:id.
- *
- * Production replacement:
- *   const browser = await chromium.launch({ headless: true });
- *   const ctx = await browser.newContext();
- *   await ctx.addCookies([{ name: 'li_at', value: config.sessionCookie, ... }]);
- *   const page = await ctx.newPage();
- *   await page.goto(recipient.profileUrl);
- *   // ... interact based on action
+ * Execute a LinkedIn action against a prospect.
+ * Defaults to a DM when text is present; falls back to an invitation with the
+ * same text used as the connection note when the prospect is not connected.
  */
 export async function sendLinkedInAction(
   config: LinkedInAccountConfig,
   recipient: LinkedInRecipient,
   content: LinkedInContent,
-  action: LinkedInAction = resolveAction(),
+  action?: LinkedInAction,
 ): Promise<LinkedInSendResult> {
-  logger.info(
-    { action, profileUrl: recipient.profileUrl, hasText: !!content.text },
-    'LinkedIn action queued (Playwright execution layer not yet wired)',
-  );
+  const chosen = action ?? resolveAction();
+  const text = content.text ?? '';
 
-  // MVP stub: accept the action so jobs complete successfully.
-  // When Playwright is wired, replace this block with real browser automation.
-  return {
-    resolvedAction: action,
-    status: 'accepted',
-  };
+  if (chosen === 'message' && text) {
+    return sendMessage(config, recipient.profileUrl, text, '');
+  }
+  if (chosen === 'invitation' || (chosen === 'message' && !text)) {
+    return sendInvitation(config, recipient.profileUrl, text, '');
+  }
+  if (chosen === 'post_like') {
+    return playwrightLike(config, recipient.profileUrl, '');
+  }
+  return { resolvedAction: chosen, status: 'skipped', error: 'no_text_for_message' };
 }
 
 /**
  * Like the most relevant recent post on a prospect's LinkedIn profile.
  * Revor: POST /api/v1/outreach/linkedin/post-likes
- * MVP: stub returning "skipped" (no relevant post found).
+ * Returns 'skipped' when no recent post is found or the button is unavailable.
  */
 export async function likeRelevantPost(
   config: LinkedInAccountConfig,
   profileUrl: string,
 ): Promise<LinkedInSendResult> {
-  logger.info(
-    { profileUrl },
-    'LinkedIn post-like queued (Playwright execution layer not yet wired)',
-  );
-
-  return {
-    resolvedAction: 'post_like',
-    status: 'skipped',
-  };
+  logger.info({ profileUrl }, 'LinkedIn post-like dispatched to automation layer');
+  return playwrightLike(config, profileUrl, '');
 }

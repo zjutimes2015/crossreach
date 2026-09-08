@@ -13,6 +13,8 @@ import { outreachRoutes } from './routes/outreach.js';
 import { discoveryRoutes } from './routes/discovery.js';
 import { billingRoutes } from './routes/billing.js';
 import { connectRoutes } from './routes/connect.js';
+import { stripeRoutes } from './routes/billing-stripe.js';
+import { crmRoutes } from './routes/crm.js';
 import { tenantMiddleware } from './middleware/tenant.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +42,16 @@ export async function buildServer() {
     prefix: '/',
   });
 
+  // Serve the React "Mission Control" dashboard at /dashboard/ (its own
+  // encapsulation context so the sendFile reply decorator isn't re-added).
+  server.get('/dashboard', async (_req, reply) => reply.redirect('/dashboard/'));
+  await server.register(async (dashboard) => {
+    await dashboard.register(fastifyStatic, {
+      root: path.resolve(__dirname, '../../dashboard/dist'),
+      prefix: '/dashboard/',
+    });
+  });
+
   // Health check
   server.get('/health', async () => ({
     status: 'ok',
@@ -63,6 +75,8 @@ export async function buildServer() {
       await api.register(discoveryRoutes);
       await api.register(billingRoutes);
       await api.register(connectRoutes);
+      await api.register(stripeRoutes);
+      await api.register(crmRoutes);
     },
     { prefix: '/api' },
   );

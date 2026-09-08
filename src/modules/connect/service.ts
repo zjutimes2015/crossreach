@@ -201,21 +201,49 @@ export async function createConnectAccount(
 
 // ── List connect accounts ──────────────────────────────────────────────────
 
+export interface ChannelQuotaRow {
+  channel: 'EMAIL' | 'SOCIAL';
+  label: string;
+  used: number;
+  limit: number;
+}
+
+export interface ChannelQuota {
+  plan: Plan;
+  rows: ChannelQuotaRow[];
+}
+
+async function channelQuota(tenantId: string, plan: Plan): Promise<ChannelQuota> {
+  const { emailInboxes, socialChannels } = planQuota(plan);
+  const [emailCount, socialCount] = await Promise.all([
+    prisma.connectAccount.count({ where: { tenantId, channel: 'EMAIL' } }),
+    prisma.connectAccount.count({ where: { tenantId, channel: { in: ['LINKEDIN', 'WHATSAPP'] } } }),
+  ]);
+  return {
+    plan,
+    rows: [
+      { channel: 'EMAIL', label: 'Email inbox', used: emailCount, limit: emailInboxes },
+      { channel: 'SOCIAL', label: 'Social (LinkedIn + WhatsApp)', used: socialCount, limit: socialChannels },
+    ],
+  };
+}
+
 export async function listConnectAccounts(
   tenantId: string,
+  plan: Plan,
   opts: { channel?: ConnectChannelType; status?: ConnectAccountStatus } = {},
-): Promise<{ accounts: ConnectAccountResponse[] }> {
+): Promise<{ accounts: ConnectAccountResponse[]; quota: ChannelQuota }> {
   const where: { tenantId: string; channel?: ConnectChannelType; status?: ConnectAccountStatus } = {
     tenantId,
   };
   if (opts.channel) where.channel = opts.channel;
   if (opts.status) where.status = opts.status;
 
-  const accounts = await prisma.connectAccount.findMany({
-    where,
-    orderBy: { createdAt: 'asc' },
-  });
-  return { accounts: accounts.map((a) => toResponse(a)) };
+  const [accounts, quota] = await Promise.all([
+    prisma.connectAccount.findMany({ where, orderBy: { createdAt: 'asc' } }),
+    channelQuota(tenantId, plan),
+  ]);
+  return { accounts: accounts.map((a) => toResponse(a)), quota };
 }
 
 // ── Get a single account ────────────────────────────────────────────────────
