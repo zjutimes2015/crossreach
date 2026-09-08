@@ -31,8 +31,99 @@ model Tenant {
   campaigns     Campaign[]
   sequences     Sequence[]
   aiContentTemplates AIContentTemplate[]
+  connectAccounts ConnectAccount[]
+  outreachJobs  OutreachJob[]
+  websets       Webset[]
+  websetItems   WebsetItem[]
+  discoveryJobs DiscoveryJob[]
+  creditBalance CreditBalance?
+  creditTransactions CreditTransaction[]
+  usageEvents   UsageEvent[]
 
   @@map("tenants")
+}
+
+// ── Billing: Credit Balance + Ledger + Usage Metering ───────────────────────
+// Mirrors Revor's credit-based pricing model: each plan grants monthly credits
+// (300 free / 5000 starter / 12000 scale / 30000 pro) that are consumed by
+// discovery, enrichment, and outreach actions. Purchased credits never expire
+// and top up the balance on top of the monthly grant.
+
+model CreditBalance {
+  id            String   @id @default(cuid())
+  tenantId      String   @unique
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Purchased credits (never expire; only decremented by consumption)
+  purchased     Int      @default(0)
+  // Granted credits for the current billing cycle (reset on cycle rollover)
+  granted       Int      @default(0)
+  // Total consumed across the current cycle (for quota display + dashboards)
+  consumedThisCycle Int  @default(0)
+  // Start of the current monthly billing cycle (UTC midnight on the 1st)
+  cycleStartedAt DateTime @default(now())
+  cycleEndsAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("credit_balances")
+}
+
+model CreditTransaction {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type        CreditTransactionType
+  // Credit delta (positive for grant/top-up/refund, negative for consumption)
+  amount      Int
+  // Running balance after this transaction (purchased + granted)
+  balanceAfter Int
+  // What resource triggered this charge (webset item, outreach send, etc.)
+  resource    UsageResourceType?
+  // Free-form context: { jobId, websetId, channel, action, reason }
+  description String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, type])
+  @@index([tenantId, createdAt])
+  @@map("credit_transactions")
+}
+
+enum CreditTransactionType {
+  GRANT      // monthly plan grant at cycle start
+  TOP_UP     // purchased credit pack
+  CONSUME    // deduction for a metered action
+  REFUND     // credit returned (failed action, cancelled job)
+  ADJUST     // manual adjustment (support / dispute resolution)
+}
+
+model UsageEvent {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource    UsageResourceType
+  // Credits charged for this single event
+  credits     Int
+  // Linked entity IDs (nullable: not every event is tied to a job/webset)
+  jobId       String?
+  websetId    String?
+  // Dimensional breakdown for metering dashboards (channel, action, kind)
+  dimensions  Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, resource])
+  @@index([tenantId, createdAt])
+  @@map("usage_events")
+}
+
+enum UsageResourceType {
+  WEBSET_ITEM      // one discovered prospect in a webset
+  OUTREACH_SEND    // one email/whatsapp/linkedin outbound send
+  RESEARCH         // one public-web research query batch
+  CONTACT_FIND     // one decision-maker contact lookup
+  AI_GENERATE      // one AI content generation call
 }
 
 enum Plan {
@@ -109,6 +200,7 @@ enum ChannelType {
   TELEGRAM
   EMAIL
   WEB_CHAT
+  LINKEDIN
 }
 
 // ── Unified Customer Profile (CDP) ────────────────────────────────────────
@@ -490,4 +582,223 @@ enum EnrollmentStatus {
   ACTIVE     // steps still pending
   COMPLETED  // all steps executed
   STOPPED    // customer replied or manually stopped
+}
+
+// ── Connect Accounts (对标 Revor connected sending accounts) ──────────────
+// A "sending account" = a connected email inbox, LinkedIn session, or
+// WhatsApp number that the platform uses to send outbound outreach.
+// Revor's model: connect once, then dispatch outreach tasks to it.
+
+model ConnectAccount {
+  id        String             @id @default(cuid())
+  tenantId  String
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Which channel this account can send on
+  channel   ConnectChannelType
+  name      String
+  // Account status — mirrors Revor's "reconnect_required" error code
+  status    ConnectAccountStatus @default(ACTIVE)
+  // Channel-specific config stored as JSON:
+  //   email    → { smtpHost, smtpPort, smtpUser, smtpPass, fromAddress, fromName }
+  //   whatsapp → { phoneNumberId, accessToken, wabaId, phoneNumber }
+  //   linkedin → { sessionCookie, profileUrl } (Playwright session)
+  config    Json
+  lastUsedAt DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  outreachJobs OutreachJob[]
+
+  @@unique([tenantId, channel])
+  @@index([tenantId])
+  @@map("connect_accounts")
+}
+
+enum ConnectChannelType {
+  EMAIL
+  LINKEDIN
+  WHATSAPP
+}
+
+enum ConnectAccountStatus {
+  ACTIVE             // ready to send
+  RECONNECT_REQUIRED // session expired / token revoked
+  DISABLED           // manually disabled by tenant
+}
+
+// ── Outreach Jobs (对标 Revor POST /api/v1/outreach/dispatches) ───────────
+// A single outreach task: one email, one LinkedIn action, or one WhatsApp
+// message. Created via the dispatch API, executed asynchronously, then
+// polled via GET /api/v1/outreach/jobs/{id}.
+
+model OutreachJob {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Which connected sending account executes this job
+  connectAccountId String?
+  connectAccount   ConnectAccount? @relation(fields: [connectAccountId], references: [id], onDelete: SetNull)
+
+  // Revor-style fields
+  action    OutreachAction @default(OUTREACH_DISPATCH)
+  channel   ConnectChannelType
+  status    OutreachJobStatus @default(QUEUED)
+
+  // Recipient info (channel-specific):
+  //   email    → { address, name? }
+  //   linkedin → { profileUrl }
+  //   whatsapp → { phone }
+  recipient Json
+  // Message content (channel-specific):
+  //   email    → { subject, text?, html?, attachments? }
+  //   linkedin → { text?, attachments? }
+  //   whatsapp → { text?, attachments? }
+  content   Json
+  // Optional metadata from the integration (e.g. source campaign, sequence step)
+  metadata  Json?
+
+  // Scheduling & execution timeline
+  scheduledAt  DateTime?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  attemptCount Int       @default(0)
+  nextAttemptAt DateTime?
+  // Min interval between tasks on the same channel/account (Revor: 60-86400s)
+  minIntervalSeconds Int @default(60)
+
+  // Result on success (Revor: { resolvedAction, messageId, status })
+  result    Json?
+  // Error on failure (Revor: { code, message, retryable })
+  error     Json?
+
+  // Idempotency key to prevent duplicate dispatches
+  idempotencyKey String? @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([connectAccountId])
+  @@index([tenantId, status])
+  @@index([status, scheduledAt])
+  @@map("outreach_jobs")
+}
+
+enum OutreachAction {
+  OUTREACH_DISPATCH      // send a message/invitation (email/linkedin/whatsapp)
+  OUTREACH_LINKEDIN_POST_LIKE // like a prospect's relevant LinkedIn post
+}
+
+enum OutreachJobStatus {
+  QUEUED     // created, waiting to run
+  SCHEDULED  // scheduled for a future time
+  RUNNING    // currently executing
+  SUCCEEDED  // completed successfully
+  FAILED     // execution failed
+  CANCELLED  // cancelled by user or system
+}
+
+// ── Discovery: Prospect Lists + Research + Contacts (对标 Revor MCP) ────────
+// Mirrors Revor's async discovery pipeline:
+//   revor_create_webset  → Webset + preparation DiscoveryJob
+//   revor_research_public_web → DiscoveryJob (PUBLIC_RESEARCH)
+//   revor_find_contacts  → DiscoveryJob (FIND_CONTACTS)
+//   revor_get_job / revor_cancel_job → poll / cancel DiscoveryJob
+
+model Webset {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  // COMPANY = find companies matching the ICP; PERSON = find decision-makers
+  targetKind  WebsetTargetKind
+  // Natural-language ICP + structured filters (region, industry, role, size…)
+  criteria    Json
+  status      WebsetStatus @default(PREPARING)
+  // How many results were/are requested (tier-bounded, never silently reduced)
+  requestedCount Int @default(25)
+  // Discovered item count (updated as the preparation job produces results)
+  itemCount   Int      @default(0)
+  // The async job that prepares this webset's results
+  preparationJobId String?
+  preparationJob  DiscoveryJob? @relation(fields: [preparationJobId], references: [id], onDelete: SetNull)
+  items       WebsetItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@map("websets")
+}
+
+enum WebsetTargetKind {
+  COMPANY
+  PERSON
+}
+
+enum WebsetStatus {
+  PREPARING   // discovery in progress
+  READY       // results available
+  FAILED
+}
+
+model WebsetItem {
+  id          String   @id @default(cuid())
+  websetId    String
+  webset      Webset   @relation(fields: [websetId], references: [id], onDelete: Cascade)
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Ranking position (lower = better match)
+  rank        Int
+  // Company or person fields (Revor "compact/standard/full" detail modes)
+  data        Json
+  // 0–100 match confidence
+  matchScore  Float?
+  // Provisional while discovery is still running (Revor marks early results)
+  isProvisional Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([websetId])
+  @@index([tenantId])
+  @@map("webset_items")
+}
+
+model DiscoveryJob {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // What kind of discovery operation this job runs
+  kind      DiscoveryJobKind
+  status    DiscoveryJobStatus @default(QUEUED)
+  // Original request parameters (ICP, queries, domain, positions…)
+  input     Json
+  // Result payload on success (research findings / contact list / webset summary)
+  result    Json?
+  // Credit settlement info (Revor: { charged_credits, … })
+  billing   Json?
+  // { code, message } on failure
+  error     Json?
+  // Polling hint returned to the client (Revor next_action: retry_after_ms + arguments)
+  nextAction Json?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt DateTime @default(now())
+
+  websets   Webset[]  // websets whose preparation this job owns
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("discovery_jobs")
+}
+
+enum DiscoveryJobKind {
+  WEBSET_PREPARATION
+  PUBLIC_RESEARCH
+  FIND_CONTACTS
+}
+
+enum DiscoveryJobStatus {
+  QUEUED     // created, waiting to run
+  RUNNING    // being processed
+  SUCCEEDED  // result + billing ready
+  FAILED     // failed, includes public error code
+  CANCELLED  // cancelled by user
 }

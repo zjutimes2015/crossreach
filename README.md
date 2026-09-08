@@ -78,6 +78,9 @@ Ad lead / ICP match
 - **Unified customer profile (CDP)** — cross-channel identity merge, sales-stage flow (NEW → CONTACTED → QUALIFIED → WON)
 - **Smart routing** — round-robin / least-load / dedicated / skill-based assignment
 - **Commercial landing page** — served at `/`, ready for deployment
+- **ICP target discovery (websets)** — describe an ICP in plain language, get back live-signal prospect lists (à la revor.ai `Target`)
+- **Credit-based billing + usage metering** — per-plan monthly grants, purchased credits, auto-refund on failure
+- **Connect accounts API** — link email inboxes / LinkedIn sessions / WhatsApp numbers with live test-connection, masked secrets and plan-aware quotas
 
 ## Tech stack
 
@@ -161,15 +164,20 @@ Copy `.env.example` to `.env` and fill in:
 
 ## Data model
 
-15 Prisma models + 16 enums. Core entities:
+23 Prisma models + 26 enums. Core entities:
 
 ```
 Tenant ──< Channel          (WhatsApp, Email, LinkedIn, …)
+       │     └─< ConnectAccount   (per-channel sending account; status + masked secrets)
+       ──< CreditBalance ──< CreditTransaction  (metered billing, granted + purchased pools)
+       ──< UsageEvent                        (per-resource metering ledger)
        ──< User             (sales reps, admins)
        ──< Customer         (unified CDP profile)
        │      └─< Conversation ──< Message
-       ──< SkillGroup       (routing target)
-       ──< RoutingRule      (assignment rules)
+       ──< Webset ──< WebsetItem     (ICP → prospect list)
+       │      └─< DiscoveryJob       (async preparation jobs)
+       ──< OutreachJob    (email / LinkedIn / WhatsApp dispatch tasks, idempotent)
+       ──< SkillGroup ──< RoutingRule      (routing target + assignment rules)
        ──< LeadSource       (FB/TikTok/Google lead forms)
        ──< Campaign ──< CampaignRecipient   (batch broadcast)
        ──< Sequence ──< SequenceStep        (cross-channel steps)
@@ -177,13 +185,33 @@ Tenant ──< Channel          (WhatsApp, Email, LinkedIn, …)
        ──< AIContentTemplate                (LLM prompt + variables)
 ```
 
-Key enums: `ChannelType`, `CustomerStage` (NEW→CONTACTED→QUALIFIED→WON), `StepActionType` (7 action types), `EnrollmentStatus` (ACTIVE/COMPLETED/STOPPED), `AssignStrategy` (4 routing algorithms).
+Key enums: `ChannelType`, `CustomerStage` (NEW→CONTACTED→QUALIFIED→WON), `StepActionType` (7 action types), `EnrollmentStatus` (ACTIVE/COMPLETED/STOPPED), `AssignStrategy` (4 routing algorithms), `ConnectChannelType` (EMAIL/LINKEDIN/WHATSAPP), `CreditTransactionType` (GRANT/TOP_UP/CONSUME/REFUND/ADJUST), `UsageResourceType` (WEBSET_ITEM/OUTREACH_SEND/RESEARCH/CONTACT_FIND/AI_GENERATE).
 
 See [prisma/schema.prisma](prisma/schema.prisma) for the full schema.
 
 ## API reference
 
 All `/api/*` routes require the `x-api-key: <your-tenant-api-key>` header.
+
+### Revor-compatible v1 API (discovery · outreach · connect · billing)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/discovery/websets` | Describe an ICP → get a prospect webset (202, async) |
+| `POST` | `/api/v1/discovery/contacts` | Enrich a company → decision-maker contacts |
+| `POST` | `/api/v1/discovery/research` | Deep-research a target account |
+| `POST` | `/api/v1/outreach/dispatches` | Create an email/LinkedIn/WhatsApp outreach task (202, async) |
+| `POST` | `/api/v1/outreach/linkedin/post-likes` | Like a prospect's relevant LinkedIn post |
+| `GET` | `/api/v1/outreach/jobs/:id` | Poll async job status & result |
+| `GET/POST` | `/api/v1/connect/accounts` | List / link sending accounts (email, LinkedIn, WhatsApp) |
+| `GET/PATCH/DELETE` | `/api/v1/connect/accounts/:id` | Read (secrets masked) / update / disconnect |
+| `POST` | `/api/v1/connect/accounts/:id/test` | Live-verify the connection (SMTP / Graph API / cookie) |
+| `POST` | `/api/v1/connect/accounts/:id/reconnect` | Mark a channel as needing re-auth |
+| `GET` | `/api/v1/billing/balance` | Credit balance + cycle info |
+| `GET` | `/api/v1/billing/plan` | Current plan, quotas & credit costs |
+| `POST` | `/api/v1/billing/top-up` | Purchase credits (granted vs. purchased pools) |
+| `GET` | `/api/v1/billing/usage` | Metered usage summary by resource |
+| `GET` | `/api/v1/billing/transactions` | Credit transaction ledger |
 
 ### Webhooks (no auth — verified by signature/token)
 
@@ -300,13 +328,29 @@ src/
       ai.ts                        AI template CRUD + content generation
       growth.ts                    Sequences + campaigns
       customers.ts  conversations.ts  routing.ts  leads.ts
+      discovery.ts                 Revor-compatible v1: websets / contacts / research
+      outreach.ts                  Revor-compatible v1: dispatch jobs + post-likes
+      connect.ts                   Connect accounts CRUD / test / reconnect
+      billing.ts                   Balance / plan / top-up / usage / transactions
     middleware/tenant.ts         API-key → tenant resolution
     server.ts                    Fastify bootstrap + static file serving
   channels/
     whatsapp/                    WhatsApp Cloud API adapter (webhook + send + transform)
+    email/                       SMTP adapter (nodemailer)
+    linkedin/                    LinkedIn adapter (Playwright stub)
     types.ts                     Unified MessageContent abstraction (8 message kinds)
   modules/
     ai/content-generator.ts      LLM call + variable substitution + template fallback
+    discovery/
+      webset.ts                  ICP → prospect list (async job + credit charge)
+      research-contacts.ts       Company enrichment / decision-maker lookup
+      provider.ts  jobs.ts       Signal provider abstraction + job queue
+    outreach/dispatch.ts         Single-channel dispatch (async jobs, idempotency)
+    connect/service.ts           Connect account CRUD, quotas, test connection
+    billing/
+      plans.ts                   Plan definitions (credits, list sizes, channel quotas)
+      balance.ts                 Charge / refund / balance with granted-vs-purchased pools
+      metering.ts                Usage summary + event ledger
     growth/
       sequences.ts               Cross-channel sequence engine (7 action types)
       broadcast.ts               Batch campaign dispatch
@@ -357,7 +401,7 @@ Build with `npm run build` before `docker build`.
 
 ### Done
 
-- [x] Multi-tenant Prisma schema (15 models, 16 enums)
+- [x] Multi-tenant Prisma schema (23 models, 26 enums)
 - [x] WhatsApp Business Cloud API adapter (webhook + send)
 - [x] Cross-channel sequence engine (7 action types)
 - [x] AI content generation (LLM + template fallback)
@@ -365,18 +409,21 @@ Build with `npm run build` before `docker build`.
 - [x] Unified CDP + sales-stage flow
 - [x] Smart routing (4 strategies)
 - [x] Ad-lead auto-enrollment
-- [x] Commercial landing page
+- [x] Credit-based billing + usage metering (plans, charge, refund, transactions)
+- [x] ICP target discovery — websets (async jobs + credit-charged, revor.ai `Target`)
+- [x] Company enrichment / contact research endpoints
+- [x] Outreach dispatch API (async jobs, idempotency keys, auto-refund on failure)
+- [x] Connect accounts API (CRUD + live test-connection + masked secrets + plan quotas)
+- [x] Commercial landing page (terminal aesthetic, Connect showcase, pricing)
 
 ### Next
 
 - [ ] LinkedIn automation layer (Playwright-based `LINKEDIN_LIKE`/`CONNECT`/`MESSAGE` execution)
-- [ ] Email send service (currently stubbed — needs SMTP or SendGrid integration)
-- [ ] ICP target discovery (live-signal-based prospect finding, à la revor.ai)
-- [ ] Company enrichment (domain → decision-maker contacts)
-- [ ] React dashboard (conversation inbox + sequence builder)
+- [ ] Email send service hardening (template libraries, warm-up pools, deliverability)
 - [ ] Webhook delivery for CRM sync (HubSpot / Salesforce / custom)
 - [ ] Internal IM integrations (WeCom / Feishu / DingTalk) for in-team notifications
-- [ ] Credit-based billing + usage metering
+- [ ] React dashboard (conversation inbox + sequence builder + connect manager)
+- [ ] Stripe billing checkout (auto-top-up, plan changes)
 - [ ] OAuth for multi-tenant onboarding
 
 ## Contributing

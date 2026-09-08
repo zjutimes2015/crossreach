@@ -43,18 +43,20 @@ export async function sendWhatsAppMessage(
     const data = (await response.json()) as GraphApiResponse;
 
     if (!response.ok || data.error) {
+      const reason = data.error?.message ?? `WhatsApp API responded ${response.status}`;
       logger.error(
         { error: data.error, status: response.status },
         'WhatsApp API send failed',
       );
-      return { externalMessageId: '', status: 'failed' };
+      return { externalMessageId: '', status: 'failed', error: reason };
     }
 
     const messageId = data.messages?.[0]?.id ?? '';
     return { externalMessageId: messageId, status: 'sent' };
   } catch (err) {
+    const reason = err instanceof Error ? err.message : 'WhatsApp API request threw';
     logger.error({ err }, 'WhatsApp API request threw');
-    return { externalMessageId: '', status: 'failed' };
+    return { externalMessageId: '', status: 'failed', error: reason };
   }
 }
 

@@ -3,476 +3,1050 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CrossReach — AI Outbound Agent for Cross-Border Sales</title>
-  <meta name="description" content="The AI sales agent that finds buyers, orchestrates WhatsApp + LinkedIn + Email sequences, and books meetings — built for Chinese exporters." />
+  <title>CrossReach — The AI Outbound Agent for Cross-Border Sales</title>
+  <meta name="description" content="CrossReach discovers buyers from live signals, researches every account, and orchestrates WhatsApp + LinkedIn + email sequences that book meetings. Credit-based pricing, built for exporters reaching global buyers." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Hanken+Grotesk:wght@300;400;500;600;700;800&family=Martian+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <style>
+    /* ── Design tokens: "revenue intelligence terminal" ───────────────────── */
     :root {
-      --bg: #0a0f1a;
-      --bg-alt: #0f1623;
-      --surface: #161e2e;
-      --surface-hover: #1c2536;
-      --border: #243049;
-      --text: #e8edf5;
-      --text-dim: #8a96ab;
-      --text-mute: #5a6478;
-      --accent: #00e5a0;
-      --accent-dim: #00b380;
-      --accent-glow: rgba(0, 229, 160, 0.15);
-      --whatsapp: #25d366;
-      --linkedin: #0a66c2;
-      --email: #ff8a3d;
-      --gradient: linear-gradient(135deg, #00e5a0 0%, #00b380 100%);
-      --gradient-text: linear-gradient(135deg, #00e5a0 0%, #5eead4 100%);
+      --void: #0a0907;
+      --bg: #0c0b0a;
+      --surface: #141210;
+      --surface-2: #1b1815;
+      --surface-3: #221f1a;
+      --text: #ede8df;
+      --text-soft: #b8b1a3;
+      --muted: #6e695d;
+      --dim: #3d3932;
+      --border: #28241e;
+      --border-bright: #3a342b;
+      --lime: #d4f24a;
+      --lime-deep: #b8d635;
+      --lime-glow: rgba(212, 242, 74, 0.12);
+      --amber: #f0a830;
+      --amber-glow: rgba(240, 168, 48, 0.1);
+      --teal: #3dd6c0;
+      --rose: #e85d4a;
+      --serif: 'Fraunces', 'Georgia', serif;
+      --sans: 'Hanken Grotesk', -apple-system, sans-serif;
+      --mono: 'Martian Mono', 'SF Mono', monospace;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: var(--sans);
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      font-feature-settings: 'ss01', 'cv01';
+    }
+    ::selection { background: var(--lime); color: var(--bg); }
+
+    /* Film grain + subtle grid + vignette */
+    body::before {
+      content: ''; position: fixed; inset: 0; z-index: 1; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.013) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.013) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+    body::after {
+      content: ''; position: fixed; inset: 0; z-index: 2; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      opacity: 0.028; mix-blend-mode: screen;
     }
 
-    .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 0 40px; position: relative; z-index: 3; }
 
-    /* ── Nav ─────────────────────────────────────────── */
+    /* ── Nav: terminal status bar ─────────────────────────────────────────── */
     nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-      background: rgba(10, 15, 26, 0.85);
-      backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
-      transition: all 0.3s;
+      background: rgba(10, 9, 7, 0.72);
+      backdrop-filter: blur(14px) saturate(1.3);
     }
-    nav .container { display: flex; align-items: center; justify-content: space-between; height: 64px; }
-    .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; }
-    .logo-icon {
-      width: 32px; height: 32px; border-radius: 8px;
-      background: var(--gradient);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px;
+    nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .logo {
+      font-family: var(--serif); font-weight: 500; font-size: 23px;
+      font-variation-settings: "opsz" 144;
+      color: var(--text); text-decoration: none; letter-spacing: -0.02em;
+      display: flex; align-items: center; gap: 12px;
     }
-    .nav-links { display: flex; align-items: center; gap: 32px; }
-    .nav-links a { color: var(--text-dim); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.2s; }
-    .nav-links a:hover { color: var(--text); }
+    .logo-mark {
+      width: 34px; height: 34px;
+      display: grid; place-items: center;
+      font-family: var(--mono); font-size: 17px; font-weight: 600; color: var(--bg);
+      background: var(--lime);
+      box-shadow: 0 0 16px var(--lime-glow);
+      transform: rotate(-4deg);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .logo:hover .logo-mark { transform: rotate(4deg) scale(1.05); }
+    .nav-status {
+      display: flex; align-items: center; gap: 9px;
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--lime);
+      box-shadow: 0 0 8px var(--lime);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .nav-mid { display: flex; gap: 36px; }
+    .nav-mid a {
+      color: var(--text-soft); text-decoration: none; font-size: 13.5px; font-weight: 500;
+      transition: color 0.2s; position: relative;
+    }
+    .nav-mid a::after {
+      content: ''; position: absolute; bottom: -6px; left: 0; width: 0; height: 1px;
+      background: var(--lime); transition: width 0.25s ease;
+    }
+    .nav-mid a:hover { color: var(--text); }
+    .nav-mid a:hover::after { width: 100%; }
     .btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 14px;
-      text-decoration: none; cursor: pointer; border: none; transition: all 0.2s;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 12px 22px; font-size: 13.5px; font-weight: 600;
+      text-decoration: none; cursor: pointer; border: none;
+      font-family: var(--sans); transition: all 0.2s ease; letter-spacing: -0.01em;
     }
-    .btn-primary { background: var(--gradient); color: #001b12; }
-    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px var(--accent-glow); }
-    .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
-    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-lime {
+      background: var(--lime); color: var(--bg);
+      box-shadow: 0 0 0 0 var(--lime-glow);
+    }
+    .btn-lime:hover { box-shadow: 0 0 24px var(--lime-glow); transform: translateY(-1px); }
+    .btn-ghost {
+      background: transparent; color: var(--text); border: 1px solid var(--border-bright);
+    }
+    .btn-ghost:hover { border-color: var(--lime); color: var(--lime); }
+    .nav-cta { display: flex; gap: 12px; align-items: center; }
 
-    /* ── Hero ────────────────────────────────────────── */
-    .hero { padding: 140px 0 80px; position: relative; overflow: hidden; }
-    .hero::before {
-      content: ''; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
-      width: 800px; height: 800px; border-radius: 50%;
-      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
-      pointer-events: none;
+    /* ── Hero ─────────────────────────────────────────────────────────────── */
+    .hero {
+      position: relative; padding: 150px 0 100px;
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
     }
-    .hero .container { position: relative; text-align: center; }
-    .hero-badge {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 6px 16px; border-radius: 100px;
-      background: var(--surface); border: 1px solid var(--border);
-      font-size: 13px; color: var(--accent); font-weight: 500;
-      margin-bottom: 24px;
+    .hero-glow {
+      position: absolute; top: -40%; right: -10%; width: 700px; height: 700px;
+      background: radial-gradient(circle, var(--lime-glow) 0%, transparent 60%);
+      filter: blur(60px); pointer-events: none;
     }
-    .hero-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .hero-glow-2 {
+      position: absolute; bottom: -20%; left: -10%; width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(61, 214, 192, 0.06) 0%, transparent 60%);
+      filter: blur(50px); pointer-events: none;
+    }
+    .hero .wrap { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 60px; align-items: center; }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 10px;
+      font-family: var(--mono); font-size: 11px; color: var(--lime);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      padding: 7px 14px; border: 1px solid var(--border-bright); border-radius: 2px;
+      background: var(--surface); margin-bottom: 30px;
+      animation: fadeUp 0.6s ease backwards;
+    }
+    .hero-eyebrow span { width: 5px; height: 5px; background: var(--lime); border-radius: 50%; }
     h1 {
-      font-size: clamp(36px, 5vw, 56px); font-weight: 800; line-height: 1.1;
-      letter-spacing: -0.02em; margin-bottom: 24px; max-width: 800px; margin-left: auto; margin-right: auto;
+      font-family: var(--serif); font-weight: 400;
+      font-size: clamp(42px, 5.8vw, 76px); line-height: 0.98; letter-spacing: -0.035em;
+      font-variation-settings: "opsz" 144;
+      color: var(--text); margin-bottom: 28px;
+      animation: fadeUp 0.7s ease 0.1s backwards;
     }
-    .hero h1 .grad { background: var(--gradient-text); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .hero p.lead { font-size: 19px; color: var(--text-dim); max-width: 620px; margin: 0 auto 36px; }
-    .hero-cta { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
-    .hero-cta .btn { padding: 14px 28px; font-size: 15px; }
-    .hero-stats { display: flex; gap: 48px; justify-content: center; margin-top: 64px; flex-wrap: wrap; }
-    .stat { text-align: center; }
-    .stat .num { font-size: 32px; font-weight: 800; color: var(--accent); }
-    .stat .label { font-size: 13px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.05em; }
-
-    /* ── Sequence visualization ───────────────────────── */
-    .section { padding: 80px 0; }
-    .section-header { text-align: center; margin-bottom: 56px; }
-    .section-header .eyebrow { color: var(--accent); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
-    .section-header h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px; }
-    .section-header p { color: var(--text-dim); font-size: 17px; max-width: 600px; margin: 0 auto; }
-
-    .sequence-demo {
-      background: var(--bg-alt); border: 1px solid var(--border);
-      border-radius: 16px; padding: 48px; overflow: hidden;
+    h1 em {
+      font-style: italic; font-weight: 300; color: var(--lime);
+      font-variation-settings: "opsz" 144, "SOFT" 100;
     }
-    .sequence-timeline { position: relative; display: flex; gap: 24px; overflow-x: auto; padding-bottom: 16px; }
+    .hero-sub {
+      font-size: 18px; line-height: 1.55; color: var(--text-soft); max-width: 520px;
+      margin-bottom: 36px; animation: fadeUp 0.7s ease 0.2s backwards;
+    }
+    .hero-cta { display: flex; gap: 14px; margin-bottom: 44px; animation: fadeUp 0.7s ease 0.3s backwards; }
+    .hero-meta {
+      display: flex; gap: 32px; padding-top: 26px; border-top: 1px solid var(--border);
+      animation: fadeUp 0.7s ease 0.4s backwards;
+    }
+    .hero-meta div { display: flex; flex-direction: column; gap: 4px; }
+    .hero-meta b {
+      font-family: var(--serif); font-size: 28px; font-weight: 500; color: var(--text);
+      font-variation-settings: "opsz" 72;
+    }
+    .hero-meta span {
+      font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+
+    /* ── Hero terminal panel ──────────────────────────────────────────────── */
+    .terminal {
+      background: var(--surface); border: 1px solid var(--border-bright);
+      border-radius: 4px; overflow: hidden;
+      box-shadow: 0 30px 80px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(212,242,74,0.04);
+      animation: fadeUp 0.8s ease 0.3s backwards;
+    }
+    .terminal-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 16px; border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .terminal-bar-l { display: flex; align-items: center; gap: 7px; }
+    .tdot { width: 10px; height: 10px; border-radius: 50%; background: #3a3530; }
+    .terminal-title {
+      font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .terminal-body { padding: 22px 20px; }
+    .tline {
+      font-family: var(--mono); font-size: 12.5px; line-height: 1.85; color: var(--text-soft);
+      display: flex; gap: 10px; align-items: baseline;
+    }
+    .tline .prompt { color: var(--lime); flex-shrink: 0; }
+    .tline .key { color: var(--teal); }
+    .tline .val { color: var(--text); }
+    .tline .ok { color: var(--lime); }
+    .tline .warn { color: var(--amber); }
+    .credit-meter { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border-bright); }
+    .credit-meter-label {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px;
+      display: flex; justify-content: space-between;
+    }
+    .credit-bar { height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden; position: relative; }
+    .credit-fill {
+      height: 100%; width: 78%;
+      background: linear-gradient(90deg, var(--lime), var(--lime-deep));
+      box-shadow: 0 0 12px var(--lime-glow);
+      border-radius: 3px;
+      animation: meterFill 1.4s cubic-bezier(0.22, 1, 0.36, 1) 0.8s backwards;
+      transform-origin: left;
+    }
+    @keyframes meterFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .credit-count {
+      font-family: var(--serif); font-size: 32px; font-weight: 500; color: var(--text);
+      font-variation-settings: "opsz" 72; margin-top: 6px;
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .credit-count small { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 400; }
+
+    /* ── Channel marquee (integration wall) ───────────────────────────────── */
+    .channels-band { border-bottom: 1px solid var(--border); background: var(--void); overflow: hidden; padding: 30px 0; }
+    .channels-band .band-label {
+      font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+      text-align: center; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 22px;
+    }
+    .marquee { display: flex; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
+    .marquee-track { display: flex; gap: 12px; padding: 4px 0; animation: scroll 30s linear infinite; width: max-content; }
+    .marquee:hover .marquee-track { animation-play-state: paused; }
+    .ch-chip {
+      display: inline-flex; align-items: center; gap: 10px;
+      font-family: var(--mono); font-size: 12px; color: var(--text-soft);
+      border: 1px solid var(--border); background: var(--surface); border-radius: 2px;
+      padding: 10px 18px; white-space: nowrap;
+    }
+    .ch-chip .glyph { font-size: 15px; line-height: 1; }
+    .ch-chip.ch-on { border-color: rgba(212,242,74,0.35); color: var(--lime); box-shadow: inset 0 0 20px rgba(212,242,74,0.05); }
+    @keyframes scroll { to { transform: translateX(-50%); } }
+
+    /* ── Section base ─────────────────────────────────────────────────────── */
+    section { position: relative; }
+    .section-pad { padding: 110px 0; border-bottom: 1px solid var(--border); }
+    .section-label {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 11px; color: var(--lime);
+      letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 20px;
+    }
+    .section-label::before { content: ''; width: 24px; height: 1px; background: var(--lime); }
+    h2 {
+      font-family: var(--serif); font-weight: 400;
+      font-size: clamp(34px, 4.4vw, 56px); line-height: 1.02; letter-spacing: -0.03em;
+      font-variation-settings: "opsz" 144; color: var(--text); margin-bottom: 20px;
+    }
+    h2 em { font-style: italic; color: var(--lime); font-weight: 300; }
+    .section-sub {
+      font-size: 17px; color: var(--text-soft); max-width: 580px; margin-bottom: 64px;
+      line-height: 1.55;
+    }
+
+    /* ── Omnichannel sequence timeline ────────────────────────────────────── */
+    .seq-wrap {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 0;
+      border: 1px solid var(--border-bright); border-radius: 4px; overflow: hidden;
+      background: var(--surface);
+    }
     .seq-step {
-      flex: 0 0 240px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 24px; position: relative;
-      transition: all 0.3s;
+      padding: 32px 24px; border-right: 1px solid var(--border);
+      position: relative; transition: background 0.3s;
     }
-    .seq-step:hover { transform: translateY(-4px); border-color: var(--accent-dim); }
-    .seq-step .day { font-size: 12px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }
-    .seq-step .channel-icon {
-      width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
-      font-size: 20px; margin-bottom: 16px;
+    .seq-step:last-child { border-right: none; }
+    .seq-step:hover { background: var(--surface-2); }
+    .seq-day {
+      font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px;
     }
-    .seq-step .channel-icon.wa { background: rgba(37, 211, 102, 0.15); }
-    .seq-step .channel-icon.li { background: rgba(10, 102, 194, 0.15); }
-    .seq-step .channel-icon.em { background: rgba(255, 138, 61, 0.15); }
-    .seq-step h4 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
-    .seq-step p { font-size: 13px; color: var(--text-dim); }
-    .seq-step .arrow { position: absolute; right: -20px; top: 50%; transform: translateY(-50%); color: var(--text-mute); font-size: 20px; z-index: 1; }
-    .seq-step:last-child .arrow { display: none; }
+    .seq-icon {
+      width: 38px; height: 38px; border-radius: 3px; display: grid; place-items: center;
+      font-family: var(--mono); font-size: 18px; font-weight: 500; margin-bottom: 18px;
+      border: 1px solid var(--border-bright); background: var(--surface-2);
+    }
+    .seq-step:nth-child(1) .seq-icon { color: var(--amber); border-color: rgba(240,168,48,0.3); }
+    .seq-step:nth-child(2) .seq-icon, .seq-step:nth-child(3) .seq-icon { color: var(--teal); border-color: rgba(61,214,192,0.3); }
+    .seq-step:nth-child(4) .seq-icon { color: var(--lime); border-color: rgba(212,242,74,0.3); }
+    .seq-step:nth-child(5) .seq-icon { color: var(--rose); border-color: rgba(232,93,74,0.3); }
+    .seq-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; line-height: 1.3; }
+    .seq-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .seq-arrow {
+      position: absolute; right: -8px; top: 50%;
+      width: 14px; height: 14px; background: var(--bg);
+      border-top: 1px solid var(--border); border-right: 1px solid var(--border);
+      transform: translateY(-50%) rotate(45deg); z-index: 2;
+    }
+    .seq-step:last-child .seq-arrow { display: none; }
 
-    /* ── Features grid ───────────────────────────────── */
-    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-    .feature-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 32px; transition: all 0.3s;
+    /* ── Feature cards ────────────────────────────────────────────────────── */
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .feat {
+      padding: 36px 30px 34px; background: var(--surface); position: relative;
+      transition: background 0.3s; cursor: default;
     }
-    .feature-card:hover { border-color: var(--accent-dim); background: var(--surface-hover); }
-    .feature-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-glow); display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 20px; }
-    .feature-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
-    .feature-card p { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
-
-    /* ── Code/terminal block ─────────────────────────── */
-    .code-block {
-      background: var(--bg-alt); border: 1px solid var(--border);
-      border-radius: 12px; overflow: hidden; margin-top: 32px;
+    .feat:hover { background: var(--surface-2); }
+    .feat:hover .feat-num { color: var(--lime); }
+    .feat-num {
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+      letter-spacing: 0.1em; margin-bottom: 22px; transition: color 0.3s;
     }
-    .code-header { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
-    .code-dot { width: 12px; height: 12px; border-radius: 50%; }
-    .code-dot.r { background: #ff5f57; } .code-dot.y { background: #febc2e; } .code-dot.g { background: #28c840; }
-    .code-header span { margin-left: 8px; font-size: 13px; color: var(--text-mute); font-family: monospace; }
-    pre { padding: 24px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
-    pre code { font-family: 'SF Mono', 'Fira Code', monospace; color: var(--text-dim); }
-    .kw { color: #c792ea; } .str { color: var(--accent); } .com { color: var(--text-mute); }
+    .feat h3 {
+      font-family: var(--serif); font-weight: 500; font-size: 22px; color: var(--text);
+      letter-spacing: -0.015em; margin-bottom: 12px;
+      font-variation-settings: "opsz" 72;
+    }
+    .feat p { font-size: 14px; color: var(--text-soft); line-height: 1.55; margin-bottom: 18px; }
+    .feat-tag {
+      display: inline-block; font-family: var(--mono); font-size: 10px;
+      color: var(--teal); border: 1px solid rgba(61,214,192,0.25); border-radius: 2px;
+      padding: 4px 9px; letter-spacing: 0.05em;
+    }
+    .feat:nth-child(6) .feat-tag { color: var(--lime); border-color: rgba(212,242,74,0.25); }
 
-    /* ── Pricing ─────────────────────────────────────── */
+    /* ── Connect console (accounts panel) ─────────────────────────────────── */
+    .connect-layout { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 56px; align-items: center; }
+    .connect-copy .mini-api {
+      font-family: var(--mono); font-size: 12px; color: var(--text-soft); line-height: 2;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+      padding: 16px 18px; margin-top: 26px; display: block;
+    }
+    .connect-copy .mini-api .k { color: var(--teal); }
+    .connect-copy .mini-api .c { color: var(--lime); }
+    .connect-check-list { list-style: none; margin-top: 24px; display: flex; flex-direction: column; gap: 13px; }
+    .connect-check-list li { font-size: 14.5px; color: var(--text-soft); display: flex; gap: 12px; align-items: baseline; }
+    .connect-check-list li::before {
+      content: '✓'; font-family: var(--mono); color: var(--lime); flex-shrink: 0; font-weight: 600;
+    }
+    .console {
+      border: 1px solid var(--border-bright); border-radius: 4px; background: var(--surface);
+      overflow: hidden; box-shadow: 0 30px 80px -24px rgba(0,0,0,0.6);
+    }
+    .console-top {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+      font-family: var(--mono); font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .console-top .quota { color: var(--teal); }
+    .console-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .ccard {
+      border: 1px solid var(--border); border-radius: 3px; padding: 16px;
+      display: grid; grid-template-columns: 46px 1fr auto; gap: 16px; align-items: center;
+      background: var(--surface-2); transition: border-color 0.25s, transform 0.25s;
+    }
+    .ccard:hover { border-color: var(--border-bright); transform: translateX(3px); }
+    .ccard .chan-badge {
+      width: 46px; height: 46px; border-radius: 3px; display: grid; place-items: center;
+      font-family: var(--mono); font-size: 19px; font-weight: 600;
+      background: var(--surface-3); border: 1px solid var(--border-bright);
+    }
+    .ccard:nth-child(1) .chan-badge { color: var(--amber); }
+    .ccard:nth-child(2) .chan-badge { color: var(--teal); }
+    .ccard:nth-child(3) .chan-badge { color: var(--lime); }
+    .ccard .chan-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .ccard .chan-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .ccard .chan-meta .ok-txt { color: var(--teal); }
+    .ccard .chan-meta .warn-txt { color: var(--amber); }
+    .cchip {
+      font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 5px 9px; border-radius: 2px; white-space: nowrap;
+    }
+    .cchip.on { background: rgba(212,242,74,0.1); color: var(--lime); border: 1px solid rgba(212,242,74,0.3); }
+    .cchip.warn { background: rgba(240,168,48,0.08); color: var(--amber); border: 1px solid rgba(240,168,48,0.3); }
+    .console-quota-meter {
+      display: flex; gap: 14px; align-items: center; padding: 13px 16px;
+      border-top: 1px dashed var(--border-bright); font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .quota-bar { flex: 1; height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
+    .quota-fill { height: 100%; width: 66%; background: linear-gradient(90deg, var(--teal), var(--lime)); box-shadow: 0 0 8px var(--lime-glow); }
+
+    /* ── Pricing ──────────────────────────────────────────────────────────── */
+    .pricing-toggle {
+      display: inline-flex; align-items: center; gap: 0; margin-bottom: 48px;
+      background: var(--surface); border: 1px solid var(--border-bright); border-radius: 3px;
+      padding: 4px;
+    }
+    .pricing-toggle button {
+      font-family: var(--mono); font-size: 11.5px; font-weight: 500; letter-spacing: 0.04em;
+      background: transparent; color: var(--muted); border: none; cursor: pointer;
+      padding: 8px 18px; transition: all 0.2s; text-transform: uppercase;
+    }
+    .pricing-toggle button.active { background: var(--lime); color: var(--bg); }
     .pricing-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-    .price-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 32px 24px; text-align: center; position: relative;
-      transition: all 0.3s;
+    .plan {
+      border: 1px solid var(--border-bright); border-radius: 4px; padding: 32px 26px 30px;
+      background: var(--surface); display: flex; flex-direction: column; position: relative;
+      transition: all 0.25s;
     }
-    .price-card.popular { border-color: var(--accent); box-shadow: 0 0 40px var(--accent-glow); }
-    .price-card.popular::before {
-      content: 'Most Popular'; position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-      background: var(--gradient); color: #001b12; font-size: 11px; font-weight: 700;
-      padding: 4px 12px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.05em;
+    .plan:hover { border-color: var(--border-bright); transform: translateY(-3px); }
+    .plan.featured {
+      border-color: var(--lime); background: linear-gradient(180deg, rgba(212,242,74,0.04), var(--surface));
+      box-shadow: 0 0 40px -8px var(--lime-glow);
     }
-    .price-card .plan-name { font-size: 14px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
-    .price-card .price { font-size: 36px; font-weight: 800; margin-bottom: 4px; }
-    .price-card .price small { font-size: 14px; color: var(--text-mute); font-weight: 400; }
-    .price-card .desc { font-size: 13px; color: var(--text-mute); margin-bottom: 24px; }
-    .price-card ul { list-style: none; text-align: left; margin-bottom: 24px; }
-    .price-card li { font-size: 13px; color: var(--text-dim); padding: 6px 0; padding-left: 24px; position: relative; }
-    .price-card li::before { content: '✓'; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
-    .price-card li.off { color: var(--text-mute); }
-    .price-card li.off::before { content: '—'; color: var(--text-mute); }
-
-    /* ── CTA ─────────────────────────────────────────── */
-    .cta-section {
-      background: var(--bg-alt); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
-      padding: 80px 0; text-align: center;
+    .plan-badge {
+      position: absolute; top: -10px; right: 22px;
+      font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+      background: var(--lime); color: var(--bg); padding: 4px 10px; border-radius: 2px;
+      letter-spacing: 0.06em; text-transform: uppercase;
     }
-    .cta-section h2 { font-size: 32px; font-weight: 800; margin-bottom: 16px; }
-    .cta-section p { color: var(--text-dim); margin-bottom: 32px; font-size: 17px; }
+    .plan-name {
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px;
+    }
+    .plan.featured .plan-name { color: var(--lime); }
+    .plan-price {
+      font-family: var(--serif); font-size: 44px; font-weight: 400; color: var(--text);
+      font-variation-settings: "opsz" 144; line-height: 1; margin-bottom: 6px;
+    }
+    .plan-price .cur { font-size: 20px; color: var(--muted); vertical-align: top; margin-right: 2px; }
+    .plan-price .per { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 400; }
+    .plan-credits {
+      font-family: var(--mono); font-size: 12px; color: var(--teal);
+      margin-bottom: 26px; padding-bottom: 22px; border-bottom: 1px dashed var(--border-bright);
+    }
+    .plan-credits b { color: var(--text); font-weight: 600; }
+    .plan-features { list-style: none; display: flex; flex-direction: column; gap: 11px; margin-bottom: 28px; flex: 1; }
+    .plan-features li {
+      font-size: 13px; color: var(--text-soft); display: flex; gap: 9px; align-items: baseline; line-height: 1.4;
+    }
+    .plan-features li::before { content: '+'; color: var(--lime); font-family: var(--mono); font-weight: 600; flex-shrink: 0; }
+    .plan-features li.off { color: var(--dim); }
+    .plan-features li.off::before { content: '−'; color: var(--dim); }
+    .plan .btn { width: 100%; }
+    .plan .btn-ghost { font-size: 12.5px; }
+    .plan.featured .btn-ghost { background: var(--lime); color: var(--bg); border-color: var(--lime); }
 
-    /* ── Footer ──────────────────────────────────────── */
-    footer { padding: 48px 0 32px; border-top: 1px solid var(--border); }
-    footer .container { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 32px; }
-    footer .brand { max-width: 300px; }
-    footer .brand p { color: var(--text-mute); font-size: 13px; margin-top: 12px; }
-    footer .links { display: flex; gap: 64px; flex-wrap: wrap; }
-    footer .links h5 { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
-    footer .links a { display: block; color: var(--text-dim); text-decoration: none; font-size: 13px; padding: 4px 0; }
-    footer .links a:hover { color: var(--accent); }
-    .copyright { text-align: center; color: var(--text-mute); font-size: 12px; padding-top: 32px; border-top: 1px solid var(--border); margin-top: 32px; }
+    /* ── Testimonials ─────────────────────────────────────────────────────── */
+    .tst-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .tst {
+      border: 1px solid var(--border); border-radius: 4px; padding: 30px 28px;
+      background: var(--surface); display: flex; flex-direction: column; gap: 20px;
+      transition: border-color 0.25s, transform 0.25s; position: relative;
+    }
+    .tst:hover { border-color: var(--border-bright); transform: translateY(-3px); }
+    .tst .stars { font-family: var(--mono); color: var(--amber); font-size: 13px; letter-spacing: 3px; }
+    .tst blockquote {
+      font-family: var(--serif); font-size: 17px; line-height: 1.55; color: var(--text);
+      font-weight: 400; letter-spacing: -0.01em; flex: 1;
+      font-variation-settings: "opsz" 72;
+    }
+    .tst blockquote::before { content: '“'; color: var(--lime); margin-right: 1px; }
+    .tst blockquote::after { content: '”'; color: var(--lime); }
+    .tst .who { display: flex; align-items: center; gap: 12px; }
+    .tst .avatar {
+      width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+      font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--bg);
+      background: var(--surface-3); border: 1px solid var(--border-bright); flex-shrink: 0;
+    }
+    .tst:nth-child(1) .avatar { background: var(--amber); }
+    .tst:nth-child(2) .avatar { background: var(--teal); }
+    .tst:nth-child(3) .avatar { background: var(--lime); }
+    .tst .who b { font-size: 13.5px; color: var(--text); display: block; }
+    .tst .who span { font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: 0.04em; }
 
-    /* ── Responsive ──────────────────────────────────── */
-    @media (max-width: 768px) {
-      .nav-links { display: none; }
-      .features-grid, .pricing-grid { grid-template-columns: 1fr; }
-      .hero-stats { gap: 24px; }
-      .sequence-timeline { flex-direction: column; }
-      .seq-step .arrow { display: none; }
+    /* ── Stats band ───────────────────────────────────────────────────────── */
+    .stats { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .stats .wrap { display: grid; grid-template-columns: repeat(3, 1fr); }
+    .stat { padding: 64px 40px; text-align: center; border-right: 1px solid var(--border); }
+    .stat:last-child { border-right: none; }
+    .stat b {
+      font-family: var(--serif); font-size: 64px; font-weight: 400; color: var(--lime);
+      font-variation-settings: "opsz" 144; display: block; line-height: 1; margin-bottom: 12px;
+    }
+    .stat span {
+      font-family: var(--mono); font-size: 12px; color: var(--text-soft);
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+
+    /* ── FAQ ──────────────────────────────────────────────────────────────── */
+    .faq-wrap { max-width: 820px; margin: 0 auto; }
+    .faq-item { border-bottom: 1px solid var(--border); }
+    .faq-item:first-child { border-top: 1px solid var(--border); }
+    .faq-q {
+      width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+      font-family: var(--sans); font-size: 16.5px; font-weight: 600; color: var(--text);
+      padding: 24px 44px 24px 4px; position: relative; display: flex; align-items: center; gap: 16px;
+      transition: color 0.2s;
+    }
+    .faq-q .num { font-family: var(--mono); font-size: 11px; color: var(--lime); }
+    .faq-q:hover { color: var(--lime); }
+    .faq-q::after {
+      content: '+'; position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      font-family: var(--mono); font-size: 20px; color: var(--lime); transition: transform 0.25s;
+    }
+    .faq-item.open .faq-q::after { transform: translateY(-50%) rotate(45deg); }
+    .faq-a { max-height: 0; overflow: hidden; transition: max-height 0.35s ease; }
+    .faq-item.open .faq-a { max-height: 300px; }
+    .faq-a p {
+      padding: 0 40px 26px 0; margin-left: 30px; font-size: 14.5px; color: var(--text-soft); line-height: 1.65;
+    }
+
+    /* ── Final CTA ────────────────────────────────────────────────────────── */
+    .cta { padding: 120px 0; text-align: center; position: relative; overflow: hidden; }
+    .cta-glow {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, var(--lime-glow) 0%, transparent 50%);
+      filter: blur(40px); pointer-events: none;
+    }
+    .cta .wrap { position: relative; z-index: 2; }
+    .cta h2 { margin-bottom: 18px; }
+    .cta p { font-size: 17px; color: var(--text-soft); max-width: 460px; margin: 0 auto 36px; }
+    .cta-btns { display: flex; gap: 14px; justify-content: center; }
+
+    /* ── Footer ───────────────────────────────────────────────────────────── */
+    footer { padding: 60px 0 40px; border-top: 1px solid var(--border); }
+    footer .wrap { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px; }
+    .foot-brand p { font-size: 13px; color: var(--muted); max-width: 320px; margin-top: 14px; line-height: 1.5; }
+    .foot-col h4 {
+      font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px;
+    }
+    .foot-col a { display: block; font-size: 13px; color: var(--text-soft); text-decoration: none; margin-bottom: 10px; transition: color 0.2s; }
+    .foot-col a:hover { color: var(--lime); }
+    .foot-bottom {
+      max-width: 1240px; margin: 50px auto 0; padding: 24px 40px 0;
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+
+    /* ── Animations ───────────────────────────────────────────────────────── */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ── Responsive ────────────────────────────────────────────────────────── */
+    @media (max-width: 980px) {
+      .hero .wrap { grid-template-columns: 1fr; gap: 48px; }
+      .connect-layout { grid-template-columns: 1fr; gap: 44px; }
+      .seq-wrap { grid-template-columns: 1fr; }
+      .seq-step { border-right: none; border-bottom: 1px solid var(--border); }
+      .seq-arrow { display: none; }
+      .features-grid { grid-template-columns: 1fr; }
+      .pricing-grid { grid-template-columns: 1fr 1fr; }
+      .tst-grid { grid-template-columns: 1fr; }
+      .stats .wrap { grid-template-columns: 1fr; }
+      .stat { border-right: none; border-bottom: 1px solid var(--border); }
+      footer .wrap { grid-template-columns: 1fr 1fr; }
+      .nav-mid { display: none; }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 0 22px; }
+      .pricing-grid { grid-template-columns: 1fr; }
+      .hero-cta { flex-direction: column; }
+      .hero-meta { flex-wrap: wrap; gap: 20px; }
+      .ccard { grid-template-columns: 40px 1fr; }
+      .ccard .cchip { grid-column: 2; justify-self: start; }
+      footer .wrap { grid-template-columns: 1fr; }
+      .foot-bottom { flex-direction: column; gap: 10px; }
     }
   </style>
 </head>
 <body>
-
-<!-- ── Nav ────────────────────────────────────────── -->
-<nav>
-  <div class="container">
-    <a href="#" class="logo">
-      <div class="logo-icon">↗</div>
-      CrossReach
-    </a>
-    <div class="nav-links">
-      <a href="#sequence">How it works</a>
-      <a href="#features">Features</a>
-      <a href="#pricing">Pricing</a>
-      <a href="https://github.com" target="_blank">GitHub</a>
-    </div>
-    <a href="#pricing" class="btn btn-primary">Start Free</a>
-  </div>
-</nav>
-
-<!-- ── Hero ────────────────────────────────────────── -->
-<section class="hero">
-  <div class="container">
-    <div class="hero-badge">
-      <span class="dot"></span>
-      AI Outbound Agent for Cross-Border Sales
-    </div>
-    <h1>
-      Find buyers. Warm them up across <span class="grad">WhatsApp + LinkedIn + Email</span>. Book meetings.
-    </h1>
-    <p class="lead">
-      CrossReach is the AI sales agent built for Chinese exporters. It orchestrates multi-channel sequences,
-      generates personalized outreach, and engages real buyers — so you only step in when they're ready to buy.
-    </p>
-    <div class="hero-cta">
-      <a href="#pricing" class="btn btn-primary">Start Free — 300 credits</a>
-      <a href="#sequence" class="btn btn-ghost">See how it works ↓</a>
-    </div>
-    <div class="hero-stats">
-      <div class="stat"><div class="num">3×</div><div class="label">Higher reply rate</div></div>
-      <div class="stat"><div class="num">5</div><div class="label">Touchpoints, zero manual work</div></div>
-      <div class="stat"><div class="num">24/7</div><div class="label">AI auto-engagement</div></div>
-      <div class="stat"><div class="num">1</div><div class="label">Unified conversation thread</div></div>
-    </div>
-  </div>
-</section>
-
-<!-- ── Sequence Demo ───────────────────────────────── -->
-<section class="section" id="sequence">
-  <div class="container">
-    <div class="section-header">
-      <div class="eyebrow">The omnichannel sequence</div>
-      <h2>One prospect. Three channels. One conversation.</h2>
-      <p>Your AI agent doesn't just blast emails. It orchestrates a natural, multi-touch experience that mirrors how real relationships form.</p>
-    </div>
-    <div class="sequence-demo">
-      <div class="sequence-timeline">
-        <div class="seq-step">
-          <div class="day">Day 1</div>
-          <div class="channel-icon em">✉</div>
-          <h4>Warm email</h4>
-          <p>AI-generated intro based on their company + intent signals</p>
-          <div class="arrow">→</div>
-        </div>
-        <div class="seq-step">
-          <div class="day">Day 2</div>
-          <div class="channel-icon li">in</div>
-          <h4>LinkedIn: like posts</h4>
-          <p>Engage with their recent content — warm up the name</p>
-          <div class="arrow">→</div>
-        </div>
-        <div class="seq-step">
-          <div class="day">Day 3</div>
-          <div class="channel-icon li">in</div>
-          <h4>LinkedIn: connect</h4>
-          <p>Send connection request with a contextual note</p>
-          <div class="arrow">→</div>
-        </div>
-        <div class="seq-step">
-          <div class="day">Day 5</div>
-          <div class="channel-icon wa">✆</div>
-          <h4>WhatsApp follow-up</h4>
-          <p>Casual, personal message referencing all prior context</p>
-          <div class="arrow">→</div>
-        </div>
-        <div class="seq-step">
-          <div class="day">Day 7</div>
-          <div class="channel-icon wa">✓</div>
-          <h4>Meeting booked</h4>
-          <p>Prospect already feels familiar with you before the call</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── Features ────────────────────────────────────── -->
-<section class="section" id="features">
-  <div class="container">
-    <div class="section-header">
-      <div class="eyebrow">Core features</div>
-      <h2>Your AI agent handles the work between target and booked meeting.</h2>
-    </div>
-    <div class="features-grid">
-      <div class="feature-card">
-        <div class="feature-icon">🎯</div>
-        <h3>Live Signal Targeting</h3>
-        <p>Describe your ICP. CrossReach discovers matching companies from live market signals — so every outreach is based on what's happening now, not stale data.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🔗</div>
-        <h3>Cross-Channel Sequences</h3>
-        <p>Each step targets a different channel: email warm-up → LinkedIn engagement → WhatsApp close. One unified conversation thread across all of them.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🤖</div>
-        <h3>AI Content Generation</h3>
-        <p>The agent learns your company, value prop, and examples — then writes personalized outreach for each prospect. No more mass templates.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">📥</div>
-        <h3>Ad Lead Auto-Enrollment</h3>
-        <p>Facebook, TikTok, and Google lead forms feed directly into WhatsApp sequences. New leads get an instant welcome — 24/7, zero latency.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">⚡</div>
-        <h3>Smart Routing</h3>
-        <p>Round-robin, least-load, dedicated, or skill-based assignment. New conversations auto-route to the right agent the moment they arrive.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">📊</div>
-        <h3>Unified Customer Profile</h3>
-        <p>Every touchpoint — WhatsApp, email, LinkedIn, ad click — merges into one customer record with a full timeline. No more silos.</p>
-      </div>
-    </div>
-
-    <div class="code-block">
-      <div class="code-header">
-        <div class="code-dot r"></div><div class="code-dot y"></div><div class="code-dot g"></div>
-        <span>POST /api/sequences — create a cross-channel sequence</span>
-      </div>
-<pre><code><span class="com">// Day 1: email warm-up → Day 2: LinkedIn like → Day 5: WhatsApp close</span>
-<span class="kw">POST</span> /api/sequences
-{
-  <span class="str">"name"</span>: <span class="str">"Cross-border outbound — 3 channels"</span>,
-  <span class="str">"steps"</span>: [
-    { <span class="str">"stepNumber"</span>: 1, <span class="str">"actionType"</span>: <span class="str">"SEND_AI_OUTREACH"</span>, <span class="str">"channelId"</span>: <span class="str">"email-ch-id"</span>, <span class="str">"delayMinutes"</span>: 0 },
-    { <span class="str">"stepNumber"</span>: 2, <span class="str">"actionType"</span>: <span class="str">"LINKEDIN_LIKE"</span>,    <span class="str">"delayMinutes"</span>: 1440 },
-    { <span class="str">"stepNumber"</span>: 3, <span class="str">"actionType"</span>: <span class="str">"LINKEDIN_CONNECT"</span>, <span class="str">"delayMinutes"</span>: 1440 },
-    { <span class="str">"stepNumber"</span>: 4, <span class="str">"actionType"</span>: <span class="str">"SEND_AI_OUTREACH"</span>, <span class="str">"channelId"</span>: <span class="str">"wa-ch-id"</span>,   <span class="str">"delayMinutes"</span>: 2880 }
-  ]
-}
-
-<span class="com">// Enroll a prospect → the agent handles the rest, stops if they reply</span>
-<span class="kw">POST</span> /api/sequences/<span class="str">{id}</span>/enroll  { <span class="str">"customerId"</span>: <span class="str">"cx_abc123"</span> }</code></pre>
-    </div>
-  </div>
-</section>
-
-<!-- ── Pricing ─────────────────────────────────────── -->
-<section class="section" id="pricing">
-  <div class="container">
-    <div class="section-header">
-      <div class="eyebrow">Pricing</div>
-      <h2>Cheaper than another hire. Productive from day one.</h2>
-      <p>Credit-based pricing — you only pay for enrichment and outreach that actually happens.</p>
-    </div>
-    <div class="pricing-grid">
-      <div class="price-card">
-        <div class="plan-name">Free</div>
-        <div class="price">$0<small>/mo</small></div>
-        <div class="desc">Try CrossReach</div>
-        <ul>
-          <li>300 monthly credits</li>
-          <li>25 leads per list</li>
-          <li>Lead intelligence</li>
-          <li>WhatsApp campaigns</li>
-          <li class="off">LinkedIn campaigns</li>
-          <li class="off">Connected channels</li>
-        </ul>
-        <a href="#" class="btn btn-ghost" style="width:100%">Start Free</a>
-      </div>
-      <div class="price-card">
-        <div class="plan-name">Starter</div>
-        <div class="price">$49<small>/mo</small></div>
-        <div class="desc">Solo founder</div>
-        <ul>
-          <li>5,000 monthly credits</li>
-          <li>~$0.06 per lead</li>
-          <li>100 leads per list</li>
-          <li>WhatsApp + email campaigns</li>
-          <li>AI content generation</li>
-          <li>1 connected inbox</li>
-        </ul>
-        <a href="#" class="btn btn-ghost" style="width:100%">Subscribe</a>
-      </div>
-      <div class="price-card popular">
-        <div class="plan-name">Scale</div>
-        <div class="price">$99<small>/mo</small></div>
-        <div class="desc">Growing team</div>
-        <ul>
-          <li>12,000 monthly credits</li>
-          <li>~$0.05 per lead</li>
-          <li>500 leads per list</li>
-          <li>All channel campaigns</li>
-          <li>AI + cross-channel sequences</li>
-          <li>1 social + 1 inbox</li>
-        </ul>
-        <a href="#" class="btn btn-primary" style="width:100%">Subscribe</a>
-      </div>
-      <div class="price-card">
-        <div class="plan-name">Pro</div>
-        <div class="price">$199<small>/mo</small></div>
-        <div class="desc">Full sales engine</div>
-        <ul>
-          <li>30,000 monthly credits</li>
-          <li>~$0.04 per lead</li>
-          <li>1,000 leads per list</li>
-          <li>Unlimited sequences</li>
-          <li>Priority AI generation</li>
-          <li>2 social + 1 inbox</li>
-        </ul>
-        <a href="#" class="btn btn-ghost" style="width:100%">Subscribe</a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── CTA ─────────────────────────────────────────── -->
-<section class="cta-section">
-  <div class="container">
-    <h2>Stop managing tools. Start closing deals.</h2>
-    <p>Describe your target market and let CrossReach handle the rest — from first touch to booked meeting.</p>
-    <a href="#pricing" class="btn btn-primary" style="padding:16px 36px;font-size:16px">Hire your AI agent — Free</a>
-  </div>
-</section>
-
-<!-- ── Footer ──────────────────────────────────────── -->
-<footer>
-  <div class="container">
-    <div class="brand">
-      <a href="#" class="logo"><div class="logo-icon">↗</div> CrossReach</a>
-      <p>The AI outbound agent for cross-border sales. Built for Chinese exporters reaching global buyers via WhatsApp.</p>
-    </div>
-    <div class="links">
-      <div>
-        <h5>Product</h5>
-        <a href="#sequence">How it works</a>
+  <!-- ── Nav ─────────────────────────────────────────────────────────────── -->
+  <nav>
+    <div class="wrap">
+      <a href="#" class="logo"><span class="logo-mark">⬢</span> CrossReach</a>
+      <div class="nav-mid">
+        <a href="#connect">Connect</a>
+        <a href="#sequence">Sequence</a>
         <a href="#features">Features</a>
         <a href="#pricing">Pricing</a>
       </div>
-      <div>
-        <h5>Channels</h5>
-        <a href="#">WhatsApp</a>
-        <a href="#">LinkedIn</a>
-        <a href="#">Email</a>
-        <a href="#">Instagram</a>
+      <div class="nav-cta">
+        <span class="nav-status"><span class="status-dot"></span>API Online</span>
+        <a href="#pricing" class="btn btn-ghost">Sign in</a>
+        <a href="#pricing" class="btn btn-lime">Hire for free →</a>
       </div>
+    </div>
+  </nav>
+
+  <!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-glow-2"></div>
+    <div class="wrap">
       <div>
-        <h5>Company</h5>
-        <a href="#">About</a>
-        <a href="#">Blog</a>
-        <a href="https://github.com">GitHub</a>
-        <a href="#">Contact</a>
+        <div class="hero-eyebrow"><span></span>AI B2B Sales Agent · Credit-metered</div>
+        <h1>Find & engage <em>real buyers</em> across every channel.</h1>
+        <p class="hero-sub">CrossReach discovers buyers from live signals, researches every account, and orchestrates WhatsApp + LinkedIn + email sequences that book meetings. You only step in when they're ready to buy.</p>
+        <div class="hero-cta">
+          <a href="#pricing" class="btn btn-lime">Hire CrossReach for Free →</a>
+          <a href="#sequence" class="btn btn-ghost">See how it works ↓</a>
+        </div>
+        <div class="hero-meta">
+          <div><b>3×</b><span>reply rate</span></div>
+          <div><b>5</b><span>touchpoints</span></div>
+          <div><b>1</b><span>conversation</span></div>
+        </div>
+      </div>
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-bar-l"><span class="tdot"></span><span class="tdot"></span><span class="tdot"></span></div>
+          <span class="terminal-title">crossreach ~ live dispatch</span>
+        </div>
+        <div class="terminal-body">
+          <div class="tline"><span class="prompt">›</span><span>POST /api/v1/connect/accounts</span></div>
+          <div class="tline"><span class="prompt">›</span><span class="key">channel:</span><span class="val">"whatsapp"</span> <span class="ok">linked ✓</span></div>
+          <div class="tline"><span class="prompt">›</span><span class="key">channel:</span><span class="val">"linkedin"</span> <span class="ok">linked ✓</span></div>
+          <div class="tline"><span class="prompt">›</span><span class="key">channel:</span><span class="val">"email"</span> <span class="ok">linked ✓</span></div>
+          <div class="tline"><span class="prompt">›</span><span>POST /api/v1/discovery/websets</span></div>
+          <div class="tline"><span class="prompt">›</span><span class="key">icp:</span><span class="val">"EU procurement, industrial automation"</span></div>
+          <div class="tline"><span class="prompt">›</span><span class="key">count:</span><span class="ok">25 prospects → 25 credits</span></div>
+          <div class="tline"><span class="prompt">›</span><span>POST /api/v1/outreach/dispatches × 3</span></div>
+          <div class="tline"><span class="prompt">›</span><span class="ok">sequence complete · meeting booked</span></div>
+          <div class="credit-meter">
+            <div class="credit-meter-label"><span>Credit Balance</span><span>SCALE</span></div>
+            <div class="credit-bar"><div class="credit-fill"></div></div>
+            <div class="credit-count" id="creditCount">12,000<small>credits remaining</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Channel marquee ──────────────────────────────────────────────────── -->
+  <div class="channels-band">
+    <div class="band-label">Meets your buyers on the channels they already use</div>
+    <div class="marquee">
+      <div class="marquee-track" id="marqueeTrack">
+        <span class="ch-chip ch-on"><span class="glyph">✉</span> Gmail</span>
+        <span class="ch-chip ch-on"><span class="glyph">◎</span> Outlook</span>
+        <span class="ch-chip ch-on"><span class="glyph">in</span> LinkedIn</span>
+        <span class="ch-chip ch-on"><span class="glyph">◈</span> WhatsApp</span>
+        <span class="ch-chip"><span class="glyph">f</span> Facebook</span>
+        <span class="ch-chip"><span class="glyph">▣</span> Instagram</span>
+        <span class="ch-chip"><span class="glyph">♪</span> TikTok</span>
+        <span class="ch-chip"><span class="glyph">feishu</span> Feishu</span>
+        <span class="ch-chip"><span class="glyph">✺</span> DingTalk</span>
+        <span class="ch-chip"><span class="glyph">⌘</span> Telegram</span>
+        <span class="ch-chip"><span class="glyph">⛭</span> OpenClaw</span>
+        <span class="ch-chip"><span class="glyph">&lt;/&gt;</span> Claude Code</span>
       </div>
     </div>
   </div>
-  <div class="container">
-    <div class="copyright">© 2026 CrossReach. Deployed on overseas infrastructure for WhatsApp API access.</div>
-  </div>
-</footer>
 
+  <!-- ── Connect console ──────────────────────────────────────────────────── -->
+  <section class="section-pad" id="connect">
+    <div class="wrap">
+      <div class="section-label">Connect · new in v1.2</div>
+      <div class="connect-layout">
+        <div class="connect-copy">
+          <h2>One login per channel. <em>Linked once, dispatched forever.</em></h2>
+          <p class="section-sub" style="margin-bottom:0;">Connect your real sending accounts — email inbox, LinkedIn session, WhatsApp Business number. CrossReach keeps every conversation moving across them automatically, so each touchpoint builds on the last instead of starting over.</p>
+          <ul class="connect-check-list">
+            <li>Per-channel credentials validated with a live test connection</li>
+            <li>Secrets encrypted at rest, masked on every read</li>
+            <li>Plan-aware quotas — connect exactly what your tier allows</li>
+            <li>Auto-paused when a session expires; one-click reconnect</li>
+          </ul>
+          <code class="mini-api">
+            <span class="k">POST</span> /api/v1/connect/accounts<br />
+            <span class="c">channel:</span> "linkedin" · <span class="c">status:</span> verified ✓
+          </code>
+        </div>
+        <div class="console">
+          <div class="console-top"><span>Connect · demo tenant</span><span class="quota">GROWTH</span></div>
+          <div class="console-body">
+            <div class="ccard">
+              <div class="chan-badge">✉</div>
+              <div><div class="chan-name">Sales Gmail</div>
+              <div class="chan-meta">smtp.gmail.com · <span class="ok-txt">verified 2h ago</span> · last used 09:44</div></div>
+              <span class="cchip on">Active</span>
+            </div>
+            <div class="ccard">
+              <div class="chan-badge">in</div>
+              <div><div class="chan-name">Founder Profile</div>
+              <div class="chan-meta">linkedin.com/in/maker · <span class="ok-txt">cookie valid</span> · last used 08:12</div></div>
+              <span class="cchip on">Active</span>
+            </div>
+            <div class="ccard">
+              <div class="chan-badge">◈</div>
+              <div><div class="chan-name">EU Sales Number</div>
+              <div class="chan-meta">+34 · <span class="warn-txt">token expired 3d ago</span> · blocked</div></div>
+              <span class="cchip warn">Reconnect</span>
+            </div>
+          </div>
+          <div class="console-quota-meter">
+            <span>QUOTA</span>
+            <div class="quota-bar"><div class="quota-fill"></div></div>
+            <span>2/3 channels · 1/1 email · 1/2 social</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Omnichannel sequence ─────────────────────────────────────────────── -->
+  <section class="section-pad" id="sequence">
+    <div class="wrap">
+      <div class="section-label">The omnichannel sequence</div>
+      <h2>One prospect. Three channels. <em>One conversation.</em></h2>
+      <p class="section-sub">Your agent doesn't just blast emails. It orchestrates a natural, multi-touch experience that mirrors how real relationships form — each touchpoint building on the last instead of starting over.</p>
+      <div class="seq-wrap">
+        <div class="seq-step">
+          <div class="seq-day">Day 1</div>
+          <div class="seq-icon">✉</div>
+          <div class="seq-title">Warm email</div>
+          <div class="seq-desc">Personalized intro based on their company + intent signals</div>
+          <div class="seq-arrow"></div>
+        </div>
+        <div class="seq-step">
+          <div class="seq-day">Day 2</div>
+          <div class="seq-icon">♡</div>
+          <div class="seq-title">LinkedIn: like posts</div>
+          <div class="seq-desc">Engage with their recent content — warm up the name</div>
+          <div class="seq-arrow"></div>
+        </div>
+        <div class="seq-step">
+          <div class="seq-day">Day 3</div>
+          <div class="seq-icon">⌥</div>
+          <div class="seq-title">LinkedIn: connect</div>
+          <div class="seq-desc">Send connection request with a contextual note</div>
+          <div class="seq-arrow"></div>
+        </div>
+        <div class="seq-step">
+          <div class="seq-day">Day 5</div>
+          <div class="seq-icon">◈</div>
+          <div class="seq-title">WhatsApp follow-up</div>
+          <div class="seq-desc">Casual, personal message referencing all prior context</div>
+          <div class="seq-arrow"></div>
+        </div>
+        <div class="seq-step">
+          <div class="seq-day">Day 7</div>
+          <div class="seq-icon">✓</div>
+          <div class="seq-title">Meeting booked</div>
+          <div class="seq-desc">Prospect already feels familiar before the call</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Features ────────────────────────────────────────────────────────── -->
+  <section class="section-pad" id="features">
+    <div class="wrap">
+      <div class="section-label">Core capabilities</div>
+      <h2>How CrossReach <em>works.</em></h2>
+      <p class="section-sub">Your agent handles the work between target market and booked meeting — discovery, enrichment, research, outreach, and metered billing, all in one API.</p>
+      <div class="features-grid">
+        <div class="feat">
+          <div class="feat-num">01 / Target</div>
+          <h3>Live signals, not stale databases</h3>
+          <p>Describe your ICP in plain language. CrossReach discovers matching companies and decision-makers from live market signals — every outreach based on what's happening right now.</p>
+          <span class="feat-tag">POST /v1/discovery/websets</span>
+        </div>
+        <div class="feat">
+          <div class="feat-num">02 / Enrichment</div>
+          <h3>One click to decision-makers</h3>
+          <p>Enrich any target company to identify key decision-makers — buyers, procurement managers, business contacts — complete with verified contact profiles.</p>
+          <span class="feat-tag">POST /v1/discovery/contacts</span>
+        </div>
+        <div class="feat">
+          <div class="feat-num">03 / Research</div>
+          <h3>Understanding before outreach</h3>
+          <p>Before every conversation, CrossReach builds a clear picture of the target account by analyzing company info, business context, and market signals into actionable insights.</p>
+          <span class="feat-tag">POST /v1/discovery/research</span>
+        </div>
+        <div class="feat">
+          <div class="feat-num">04 / Agent</div>
+          <h3>Personalized outreach, per prospect</h3>
+          <p>CrossReach learns from your company info, goals, and examples — then sends personalized outreach across every channel, tailored to what it knows about each account.</p>
+          <span class="feat-tag">POST /v1/ai/generate</span>
+        </div>
+        <div class="feat">
+          <div class="feat-num">05 / Connect</div>
+          <h3>Meet buyers where they are</h3>
+          <p>Link your email inbox, LinkedIn session and WhatsApp number once. Live test-connection, masked secrets, plan-aware quotas, and auto-pause when a session expires.</p>
+          <span class="feat-tag">POST /v1/connect/accounts</span>
+        </div>
+        <div class="feat">
+          <div class="feat-num">06 / Billing</div>
+          <h3>Credit-metered, pay for what ships</h3>
+          <p>Every discovery and outreach action is metered in credits. Monthly grants per plan, purchased credits that never expire, automatic refunds on failures. No seat tax.</p>
+          <span class="feat-tag">GET /v1/billing/balance</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Pricing ─────────────────────────────────────────────────────────── -->
+  <section class="section-pad" id="pricing">
+    <div class="wrap">
+      <div class="section-label">Pricing plan</div>
+      <h2>Cheaper than another hire. <em>Productive from day one.</em></h2>
+      <p class="section-sub">Credit-based pricing — you pay for enrichment and outreach that actually happens, not headcount. Monthly grants reset each cycle; purchased credits never expire.</p>
+      <div class="pricing-toggle">
+        <button class="active" onclick="setBilling(this,'monthly')">Monthly</button>
+        <button onclick="setBilling(this,'quarterly')">Quarterly −15%</button>
+        <button onclick="setBilling(this,'annual')">Annually −25%</button>
+      </div>
+      <div class="pricing-grid">
+        <div class="plan">
+          <div class="plan-name">Free</div>
+          <div class="plan-price"><span class="cur">$</span>0<span class="per">/mo</span></div>
+          <div class="plan-credits"><b>300</b> monthly credits</div>
+          <ul class="plan-features">
+            <li>Lead intelligence</li>
+            <li>Custom enrichment</li>
+            <li>Key contact email/LinkedIn</li>
+            <li>Export to CSV</li>
+            <li>Max 25 leads per list</li>
+            <li class="off">AI agent & campaigns</li>
+            <li class="off">Connected channels</li>
+          </ul>
+          <a href="#" class="btn btn-ghost">Start free</a>
+        </div>
+        <div class="plan">
+          <div class="plan-name">Starter</div>
+          <div class="plan-price" data-monthly="49" data-quarterly="42" data-annual="37"><span class="cur">$</span>49<span class="per">/mo</span></div>
+          <div class="plan-credits"><b>5,000</b> credits · ~$0.06/lead</div>
+          <ul class="plan-features">
+            <li>Everything in Free</li>
+            <li>AI agent & campaigns</li>
+            <li>Email campaigns</li>
+            <li>Train your sales agent</li>
+            <li>Max 100 leads per list</li>
+            <li>1 email inbox</li>
+            <li class="off">Social channels</li>
+          </ul>
+          <a href="#" class="btn btn-ghost">Subscribe</a>
+        </div>
+        <div class="plan featured">
+          <div class="plan-badge">Most popular</div>
+          <div class="plan-name">Scale</div>
+          <div class="plan-price" data-monthly="99" data-quarterly="84" data-annual="74"><span class="cur">$</span>99<span class="per">/mo</span></div>
+          <div class="plan-credits"><b>12,000</b> credits · ~$0.05/lead</div>
+          <ul class="plan-features">
+            <li>Everything in Starter</li>
+            <li>LinkedIn campaigns</li>
+            <li>WhatsApp campaigns</li>
+            <li>Monitor new leads</li>
+            <li>Max 500 leads per list</li>
+            <li>1 email inbox</li>
+            <li>1 social channel</li>
+          </ul>
+          <a href="#" class="btn btn-ghost">Subscribe</a>
+        </div>
+        <div class="plan">
+          <div class="plan-name">Pro</div>
+          <div class="plan-price" data-monthly="199" data-quarterly="169" data-annual="149"><span class="cur">$</span>199<span class="per">/mo</span></div>
+          <div class="plan-credits"><b>30,000</b> credits · ~$0.04/lead</div>
+          <ul class="plan-features">
+            <li>Everything in Scale</li>
+            <li>Full sales engine</li>
+            <li>Max 1,000 leads per list</li>
+            <li>1 email inbox</li>
+            <li>2 social channels</li>
+            <li>Priority support</li>
+            <li>API access</li>
+          </ul>
+          <a href="#" class="btn btn-ghost">Subscribe</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Testimonials ────────────────────────────────────────────────────── -->
+  <section class="section-pad" id="voice">
+    <div class="wrap">
+      <div class="section-label">Customer voice</div>
+      <h2>What B2B revenue teams <em>are saying</em></h2>
+      <p class="section-sub">Outbound teams that replaced their toolstack with CrossReach — one agent, every channel, booked meetings.</p>
+      <div class="tst-grid">
+        <div class="tst">
+          <div class="stars">★★★★★</div>
+          <blockquote>We cancelled Apollo, Lemlist, and our intent provider. CrossReach does all three — and the omnichannel sequences get 3× the replies our email-only campaigns ever did. It's not a tool, it's a teammate.</blockquote>
+          <div class="who">
+            <div class="avatar">NH</div>
+            <div><b>Nate H.</b><span>Head of Growth · B2B SaaS</span></div>
+          </div>
+        </div>
+        <div class="tst">
+          <div class="stars">★★★★★</div>
+          <blockquote>We thought we needed another SDR before we scaled outbound. Instead, CrossReach started researching every account, warming prospects on LinkedIn, and booking meetings across channels. Output of a rep, before we made the hire.</blockquote>
+          <div class="who">
+            <div class="avatar">AL</div>
+            <div><b>Alyssa L.</b><span>VP Revenue · SaaS Infra</span></div>
+          </div>
+        </div>
+        <div class="tst">
+          <div class="stars">★★★★★</div>
+          <blockquote>Most outbound tools still expect a human to stitch the workflow together. CrossReach is the first one that behaves like an operator: finds live buyers, builds context, handles follow-ups, and only brings us in when the conversation is ready.</blockquote>
+          <div class="who">
+            <div class="avatar">DR</div>
+            <div><b>Derek R.</b><span>Founder · Vertical SaaS</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Stats band ──────────────────────────────────────────────────────── -->
+  <section class="stats">
+    <div class="wrap">
+      <div class="stat"><b>3×</b><span>higher reply rate vs email-only</span></div>
+      <div class="stat"><b>5</b><span>touchpoints, zero manual work</span></div>
+      <div class="stat"><b>1</b><span>unified conversation thread</span></div>
+    </div>
+  </section>
+
+  <!-- ── FAQ ─────────────────────────────────────────────────────────────── -->
+  <section class="section-pad" id="faq">
+    <div class="wrap">
+      <div class="section-label" style="margin-bottom:20px;">FAQ</div>
+      <h2 style="text-align:center;">Common <em>questions</em></h2>
+      <p class="section-sub" style="margin-left:auto;margin-right:auto;text-align:center;">Everything between your target market and a booked meeting — answered.</p>
+      <div class="faq-wrap">
+        <div class="faq-item open">
+          <button class="faq-q"><span class="num">01</span>How is CrossReach different from Apollo / Lemlist / Clay?</button>
+          <div class="faq-a"><p>Those tools give you data and a sending cockpit — you still write, sequence, and chase. CrossReach is an agent: it discovers live buyers, researches each account, writes the personalized message, and runs the full multi-channel sequence until a meeting is booked. One system instead of four.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q"><span class="num">02</span>Why is outreach credit-metered instead of per-seat?</button>
+          <div class="faq-a"><p>Credit metering aligns cost with value: every credit maps to a real action — a discovered prospect, a researched account, an outbound send. Unused monthly credits roll differently than purchased credits: your grant resets each cycle, while purchased credits never expire. Failed sends are refunded automatically.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q"><span class="num">03</span>Are my email, LinkedIn and WhatsApp accounts safe?</button>
+          <div class="faq-a"><p>We connect through your own accounts with the same surfaces you use daily — no shadow profiles. Secrets are encrypted at rest, masked on every API read, and can be rotated or disconnected with one call. LinkedIn and WhatsApp automation runs at human-conservative pacing to keep accounts healthy.</p></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q"><span class="num">04</span>Can I use CrossReach for recruiting or inbound?</button>
+          <div class="faq-a"><p>Yes. The same engine that books sales meetings engages candidates on LinkedIn + email for talent teams, and qualifies inbound leads from ads over WhatsApp around the clock. Change your target description and the agent re-targets.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Final CTA ──────────────────────────────────────────────────────── -->
+  <section class="cta">
+    <div class="cta-glow"></div>
+    <div class="wrap">
+      <div class="section-label" style="justify-content:center;display:inline-flex;">Stop managing tools</div>
+      <h2>Start closing <em>deals.</em></h2>
+      <p>Describe your target and let CrossReach handle the rest. Free to start — 300 credits on the house.</p>
+      <div class="cta-btns">
+        <a href="#pricing" class="btn btn-lime">Hire for free →</a>
+        <a href="mailto:hello@crossreach.ai" class="btn btn-ghost">Contact us</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────────────────────────────── -->
+  <footer>
+    <div class="wrap">
+      <div class="foot-brand">
+        <a href="#" class="logo"><span class="logo-mark">⬢</span> CrossReach</a>
+        <p>The AI outbound agent for cross-border sales. Find buyers, warm them across channels, book meetings — built for exporters reaching global buyers.</p>
+      </div>
+      <div class="foot-col">
+        <h4>Product</h4>
+        <a href="#connect">Connect</a>
+        <a href="#sequence">Sequence</a>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+      </div>
+      <div class="foot-col">
+        <h4>Integrations</h4>
+        <a href="#">WhatsApp</a>
+        <a href="#">LinkedIn</a>
+        <a href="#">Email · SMTP</a>
+        <a href="#">Ad leads · FB/TikTok</a>
+      </div>
+      <div class="foot-col">
+        <h4>Company</h4>
+        <a href="#">About</a>
+        <a href="https://github.com/crossreach">GitHub</a>
+        <a href="#">Changelog</a>
+        <a href="mailto:hello@crossreach.ai">Contact</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 CrossReach · Built for cross-border trade</span>
+      <span>v1.2 · credit-metered · Connect API</span>
+    </div>
+  </footer>
+
+  <script>
+    // ── Pricing billing toggle ──────────────────────────────────────────────
+    function setBilling(btn, cycle) {
+      document.querySelectorAll('.pricing-toggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.plan-price[data-monthly]').forEach(el => {
+        const price = el.getAttribute('data-' + cycle);
+        if (price) el.innerHTML = '<span class="cur">$</span>' + price + '<span class="per">/mo</span>';
+      });
+    }
+
+    // ── FAQ accordion ───────────────────────────────────────────────────────
+    document.querySelectorAll('.faq-q').forEach(q => {
+      q.addEventListener('click', () => q.closest('.faq-item').classList.toggle('open'));
+    });
+
+    // ── Duplicate marquee track for seamless loop ───────────────────────────
+    (function () {
+      const track = document.getElementById('marqueeTrack');
+      if (track) track.innerHTML += track.innerHTML;
+    })();
+
+    // ── Animated credit counter ─────────────────────────────────────────────
+    (function() {
+      const el = document.getElementById('creditCount');
+      if (!el) return;
+      const target = 12000;
+      const label = el.querySelector('small') ? el.querySelector('small').outerHTML : '<small>credits remaining</small>';
+      let current = 11860;
+      const step = () => {
+        current += Math.ceil((target - current) / 8);
+        if (current >= target) current = target;
+        el.innerHTML = current.toLocaleString() + label;
+        if (current < target) requestAnimationFrame(step);
+      };
+      setTimeout(step, 900);
+    })();
+
+    // ── Staggered reveal on scroll ──────────────────────────────────────────
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.style.opacity = '1';
+          entry.target.style.transform = 'translateY(0)';
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.seq-step, .feat, .plan, .stat, .tst, .ccard, .faq-item').forEach((el, i) => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(28px)';
+      el.style.transition = `opacity 0.6s ease ${Math.min(i * 0.04, 0.4)}s, transform 0.6s ease ${Math.min(i * 0.04, 0.4)}s`;
+      observer.observe(el);
+    });
+  </script>
 </body>
 </html>

@@ -9,6 +9,10 @@ import { conversationRoutes } from './routes/conversations.js';
 import { routingRoutes } from './routes/routing.js';
 import { growthRoutes } from './routes/growth.js';
 import { aiRoutes } from './routes/ai.js';
+import { outreachRoutes } from './routes/outreach.js';
+import { discoveryRoutes } from './routes/discovery.js';
+import { billingRoutes } from './routes/billing.js';
+import { connectRoutes } from './routes/connect.js';
 import { tenantMiddleware } from './middleware/tenant.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -55,6 +59,10 @@ export async function buildServer() {
       await api.register(routingRoutes);
       await api.register(growthRoutes);
       await api.register(aiRoutes);
+      await api.register(outreachRoutes);
+      await api.register(discoveryRoutes);
+      await api.register(billingRoutes);
+      await api.register(connectRoutes);
     },
     { prefix: '/api' },
   );

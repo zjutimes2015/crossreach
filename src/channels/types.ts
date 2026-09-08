@@ -61,6 +61,8 @@ export interface OutboundMessage {
 export interface SendResult {
   externalMessageId: string;
   status: 'sent' | 'failed';
+  /** Human-readable failure reason when status === 'failed' */
+  error?: string;
 }
 
 // ── Channel Adapter Interface ─────────────────────────────────────────────
