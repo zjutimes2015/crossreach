@@ -81,6 +81,10 @@ Ad lead / ICP match
 - **ICP target discovery (websets)** — describe an ICP in plain language, get back live-signal prospect lists (à la revor.ai `Target`)
 - **Credit-based billing + usage metering** — per-plan monthly grants, purchased credits, auto-refund on failure
 - **Connect accounts API** — link email inboxes / LinkedIn sessions / WhatsApp numbers with live test-connection, masked secrets and plan-aware quotas
+- **LinkedIn automation layer** — Playwright browser session executes `LINKEDIN_MESSAGE` / `LINKEDIN_CONNECT` / post-likes from a tenant's `li_at` cookie (rate-limited pool)
+- **Stripe billing checkout** — one-off credit top-ups and monthly subscriptions, reconciled into the credit ledger via signature-verified webhooks
+- **CRM webhook sync** — HubSpot / Salesforce / Notion inbound events (incl. Change Data Capture envelopes) routed to tenants through registered integrations
+- **Mission Control dashboard** — React console with Overview / Billing / Connect / CRM Sync, served at `/dashboard/` by the API server
 
 ## Tech stack
 
@@ -129,8 +133,10 @@ The server starts on `http://localhost:3000`.
 | URL | What |
 |-----|------|
 | http://localhost:3000/ | Commercial landing page |
+| http://localhost:3000/dashboard/ | Mission Control console (React, demo key `demo-api-key-001`) |
 | http://localhost:3000/health | Health check |
 | http://localhost:3000/api/* | REST API (requires `x-api-key` header) |
+| http://localhost:3000/webhooks/* | Inbound webhooks (signature/token verified, no auth key) |
 
 ## Configuration
 
@@ -146,6 +152,8 @@ Copy `.env.example` to `.env` and fill in:
 | `OPENAI_API_KEY` | optional | Enables LLM content generation; falls back to template if unset |
 | `LLM_BASE_URL` | optional | Custom LLM endpoint (defaults to OpenAI) |
 | `LLM_MODEL` | optional | Model name (defaults to `gpt-4o-mini`) |
+| `STRIPE_SECRET_KEY` | stripe | Stripe secret key enabling Checkout sessions + webhook crypto |
+| `STRIPE_WEBHOOK_SECRET` | stripe | Stripe endpoint signing secret verifying `/webhooks/stripe` payloads |
 
 ## npm scripts
 
@@ -164,13 +172,16 @@ Copy `.env.example` to `.env` and fill in:
 
 ## Data model
 
-23 Prisma models + 26 enums. Core entities:
+27 Prisma models + 26 enums. Core entities:
 
 ```
 Tenant ──< Channel          (WhatsApp, Email, LinkedIn, …)
        │     └─< ConnectAccount   (per-channel sending account; status + masked secrets)
        ──< CreditBalance ──< CreditTransaction  (metered billing, granted + purchased pools)
        ──< UsageEvent                        (per-resource metering ledger)
+       ──< StripeCustomer ──< PaymentEvent   (Stripe subscription/checkout state)
+       ──< CrmIntegration                    (CRM object → tenant routing table)
+       ──< WebhookEvent                      (inbound CRM event log)
        ──< User             (sales reps, admins)
        ──< Customer         (unified CDP profile)
        │      └─< Conversation ──< Message
@@ -185,7 +196,7 @@ Tenant ──< Channel          (WhatsApp, Email, LinkedIn, …)
        ──< AIContentTemplate                (LLM prompt + variables)
 ```
 
-Key enums: `ChannelType`, `CustomerStage` (NEW→CONTACTED→QUALIFIED→WON), `StepActionType` (7 action types), `EnrollmentStatus` (ACTIVE/COMPLETED/STOPPED), `AssignStrategy` (4 routing algorithms), `ConnectChannelType` (EMAIL/LINKEDIN/WHATSAPP), `CreditTransactionType` (GRANT/TOP_UP/CONSUME/REFUND/ADJUST), `UsageResourceType` (WEBSET_ITEM/OUTREACH_SEND/RESEARCH/CONTACT_FIND/AI_GENERATE).
+Key enums: `ChannelType`, `CustomerStage` (NEW→CONTACTED→QUALIFIED→WON), `StepActionType` (7 action types), `EnrollmentStatus` (ACTIVE/COMPLETED/STOPPED), `AssignStrategy` (4 routing algorithms), `ConnectChannelType` (EMAIL/LINKEDIN/WHATSAPP), `ConnectAccountStatus` (ACTIVE/RECONNECT_REQUIRED), `CreditTransactionType` (GRANT/TOP_UP/CONSUME/REFUND/ADJUST), `UsageResourceType` (WEBSET_ITEM/OUTREACH_SEND/RESEARCH/CONTACT_FIND/AI_GENERATE).
 
 See [prisma/schema.prisma](prisma/schema.prisma) for the full schema.
 
@@ -212,6 +223,14 @@ All `/api/*` routes require the `x-api-key: <your-tenant-api-key>` header.
 | `POST` | `/api/v1/billing/top-up` | Purchase credits (granted vs. purchased pools) |
 | `GET` | `/api/v1/billing/usage` | Metered usage summary by resource |
 | `GET` | `/api/v1/billing/transactions` | Credit transaction ledger |
+| `POST` | `/api/v1/billing/stripe/checkout` | Start Stripe Checkout — one-off credit top-up or monthly plan subscription |
+| `GET` | `/api/v1/billing/stripe/status` | Balance, subscription state, recent payments & plan catalog |
+| `POST` | `/api/v1/crm/integrations` | Register a CRM object (`crm` + `externalId`) to route its webhooks to this tenant |
+| `GET` | `/api/v1/crm/integrations` | List the tenant's CRM integrations |
+| `DELETE` | `/api/v1/crm/integrations/:id` | Deactivate a registered CRM object |
+
+> `crm` is one of `HUBSPOT | SALESFORCE | NOTION`. Inbound webhooks only resolve to a
+> tenant when the object id was registered here first — no unauthenticated tenant guessing.
 
 ### Webhooks (no auth — verified by signature/token)
 
@@ -220,6 +239,10 @@ All `/api/*` routes require the `x-api-key: <your-tenant-api-key>` header.
 | `GET` | `/webhooks/whatsapp` | Meta webhook subscription verification |
 | `POST` | `/webhooks/whatsapp` | Receive inbound WhatsApp messages |
 | `POST` | `/webhooks/leads` | Receive ad-lead webhook (FB/TikTok/Google) |
+| `POST` | `/webhooks/stripe` | Stripe checkout / invoice / subscription events (Stripe signature) |
+| `POST` | `/webhooks/hubspot` | HubSpot deal / contact / ticket / company events |
+| `POST` | `/webhooks/salesforce` | Salesforce change events (flat or CDC envelope) |
+| `POST` | `/webhooks/notion` | Notion database page create / update events |
 
 ### AI
 
@@ -318,26 +341,31 @@ The sequence scheduler runs every 60 seconds, executes due steps, and auto-stops
 
 ```
 public/                          Commercial landing page (HTML/CSS)
+dashboard/                       Mission Control console (React + Vite, built to dist/)
 prisma/
-  schema.prisma                  Multi-tenant data model (15 models, 16 enums)
+  schema.prisma                  Multi-tenant data model (27 models, 26 enums)
   seed.ts                         Demo data (tenant + channel + admin + API key)
 src/
   api/
     routes/                      REST endpoints
-      webhooks.ts                  WhatsApp + lead-form webhooks
+      webhooks.ts                  WhatsApp + Stripe + CRM inbound webhooks
       ai.ts                        AI template CRUD + content generation
       growth.ts                    Sequences + campaigns
       customers.ts  conversations.ts  routing.ts  leads.ts
       discovery.ts                 Revor-compatible v1: websets / contacts / research
       outreach.ts                  Revor-compatible v1: dispatch jobs + post-likes
-      connect.ts                   Connect accounts CRUD / test / reconnect
+      connect.ts                   Connect accounts CRUD / test / reconnect (+ quota)
       billing.ts                   Balance / plan / top-up / usage / transactions
+      billing-stripe.ts            Stripe Checkout session + status
+      crm.ts                       CRM integration registration (HubSpot/Salesforce/Notion)
     middleware/tenant.ts         API-key → tenant resolution
-    server.ts                    Fastify bootstrap + static file serving
+    server.ts                    Fastify bootstrap + static (/, /dashboard/) serving
   channels/
     whatsapp/                    WhatsApp Cloud API adapter (webhook + send + transform)
     email/                       SMTP adapter (nodemailer)
-    linkedin/                    LinkedIn adapter (Playwright stub)
+    linkedin/
+      api.ts                     Channel-agnostic LinkedIn adapter
+      playwright.ts              Playwright browser automation (message / connect / like)
     types.ts                     Unified MessageContent abstraction (8 message kinds)
   modules/
     ai/content-generator.ts      LLM call + variable substitution + template fallback
@@ -351,6 +379,8 @@ src/
       plans.ts                   Plan definitions (credits, list sizes, channel quotas)
       balance.ts                 Charge / refund / balance with granted-vs-purchased pools
       metering.ts                Usage summary + event ledger
+      stripe.ts                  Checkout sessions + signature-verified webhook reconciliation
+    crm/webhooks.ts              HubSpot/Salesforce/Notion parsers + tenant resolution
     growth/
       sequences.ts               Cross-channel sequence engine (7 action types)
       broadcast.ts               Batch campaign dispatch
@@ -401,7 +431,7 @@ Build with `npm run build` before `docker build`.
 
 ### Done
 
-- [x] Multi-tenant Prisma schema (23 models, 26 enums)
+- [x] Multi-tenant Prisma schema (27 models, 26 enums)
 - [x] WhatsApp Business Cloud API adapter (webhook + send)
 - [x] Cross-channel sequence engine (7 action types)
 - [x] AI content generation (LLM + template fallback)
@@ -414,17 +444,17 @@ Build with `npm run build` before `docker build`.
 - [x] Company enrichment / contact research endpoints
 - [x] Outreach dispatch API (async jobs, idempotency keys, auto-refund on failure)
 - [x] Connect accounts API (CRUD + live test-connection + masked secrets + plan quotas)
+- [x] LinkedIn automation layer (Playwright: DM / connect + note / post-likes)
+- [x] CRM webhook sync (HubSpot / Salesforce / Notion inbound, registered-object routing)
+- [x] Stripe billing checkout (one-off top-ups + monthly subscriptions, webhook-reconciled)
+- [x] Mission Control dashboard (React: Overview / Billing / Connect / CRM Sync, `/dashboard/`)
 - [x] Commercial landing page (terminal aesthetic, Connect showcase, pricing)
 
 ### Next
 
-- [ ] LinkedIn automation layer (Playwright-based `LINKEDIN_LIKE`/`CONNECT`/`MESSAGE` execution)
-- [ ] Email send service hardening (template libraries, warm-up pools, deliverability)
-- [ ] Webhook delivery for CRM sync (HubSpot / Salesforce / custom)
-- [ ] Internal IM integrations (WeCom / Feishu / DingTalk) for in-team notifications
-- [ ] React dashboard (conversation inbox + sequence builder + connect manager)
-- [ ] Stripe billing checkout (auto-top-up, plan changes)
-- [ ] OAuth for multi-tenant onboarding
+- [ ] Email send service hardening (deliverability, warm-up pools, bounce/webhook handling)
+- [ ] Internal IM notifications (WeCom / Feishu / DingTalk) for team alerts
+- [ ] OAuth for multi-tenant onboarding (self-serve sign-up + API-key issuance)
 
 ## Contributing
 
