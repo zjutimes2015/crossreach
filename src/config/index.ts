@@ -29,6 +29,18 @@ const envSchema = z.object({
   // Public origin for email tracking links/pixels (open/click/unsubscribe).
   // Set to the externally reachable base URL of this deployment.
   PUBLIC_BASE_URL: z.string().url().default('http://localhost:3000'),
+
+  // LLM provider — OpenRouter as relay (中转站). When OPENROUTER_API_KEY is set
+  // it takes priority over the OpenAI-compatible vars below.
+  OPENROUTER_API_KEY: z.string().default(''),
+  OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
+  OPENROUTER_MODEL: z.string().default(''),
+
+  // Legacy direct providers (kept as fallback when no OpenRouter key)
+  OPENAI_API_KEY: z.string().default(''),
+  ANTHROPIC_API_KEY: z.string().default(''),
+  LLM_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+  LLM_MODEL: z.string().default('gpt-4o-mini'),
 });
 
 const parsed = envSchema.safeParse(process.env);

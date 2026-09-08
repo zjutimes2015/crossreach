@@ -59,10 +59,64 @@ export function renderTemplate(template: string, ctx: ProspectContext): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? '');
 }
 
-// ── LLM call (OpenAI-compatible API) ──────────────────────────────────────
+// ── LLM call (OpenAI-compatible API, optional OpenRouter relay) ────────────
 
 interface LLMResponse {
   content: string;
+}
+
+interface LLMConfig {
+  provider: 'openrouter' | 'openai' | 'anthropic';
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  /** Extra headers for the upstream (e.g. OpenRouter attribution). */
+  extraHeaders?: Record<string, string>;
+}
+
+/**
+ * Resolve which LLM backend to use. OpenRouter acts as a relay (中转站) with a
+ * single key covering many models and it takes priority when configured.
+ * Otherwise fall back to a direct OpenAI-compatible endpoint.
+ */
+function resolveLLMConfig(): LLMConfig {
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    return {
+      provider: 'openrouter',
+      apiKey: openrouterKey,
+      baseUrl: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
+      model:
+        process.env.OPENROUTER_MODEL ??
+        process.env.LLM_MODEL ??
+        'openai/gpt-4o-mini',
+      extraHeaders: {
+        // Help OpenRouter rank the app and attribute token usage.
+        'HTTP-Referer': config.PUBLIC_BASE_URL,
+        'X-Title': 'CrossReach',
+      },
+    };
+  }
+
+  return {
+    provider: process.env.OPENAI_API_KEY ? 'openai' : 'anthropic',
+    apiKey: process.env.OPENAI_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? '',
+    baseUrl: process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1',
+    model: process.env.LLM_MODEL ?? 'gpt-4o-mini',
+  };
+}
+
+let llmAvailable: boolean | null = null;
+/** Whether any LLM backend is configured (cached). */
+export function isLLMConfigured(): boolean {
+  if (llmAvailable === null) {
+    llmAvailable = !!(
+      process.env.OPENROUTER_API_KEY ??
+      process.env.OPENAI_API_KEY ??
+      process.env.ANTHROPIC_API_KEY
+    );
+  }
+  return llmAvailable;
 }
 
 async function callLLM(
@@ -70,10 +124,7 @@ async function callLLM(
   userPrompt: string,
   maxTokens: number,
 ): Promise<LLMResponse> {
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? '';
-  const baseUrl =
-    process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1';
-  const model = process.env.LLM_MODEL ?? 'gpt-4o-mini';
+  const { apiKey, baseUrl, model, extraHeaders } = resolveLLMConfig();
 
   if (!apiKey) {
     throw new Error('No LLM API key configured');
@@ -84,6 +135,7 @@ async function callLLM(
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
+      ...extraHeaders,
     },
     body: JSON.stringify({
       model,
@@ -144,8 +196,7 @@ export async function generateOutreachContent(
   const systemPrompt = renderTemplate(aiTemplate.systemPrompt, ctx);
   const userPrompt = renderTemplate(aiTemplate.userPrompt, ctx);
 
-  const hasLLM =
-    !!(process.env.OPENAI_API_KEY ?? process.env.ANTHROPIC_API_KEY);
+  const hasLLM = isLLMConfigured();
 
   if (hasLLM) {
     try {
