@@ -613,8 +613,12 @@ model ConnectAccount {
 
   outreachJobs OutreachJob[]
 
-  @@unique([tenantId, channel])
+  // A tenant may connect multiple EMAIL inboxes (round-robin warm-up pool);
+  // inbox names must be unique so the same box can't be added twice.
+  // LinkedIn / WhatsApp stay single-account per tenant (enforced in service).
+  @@unique([tenantId, name])
   @@index([tenantId])
+  @@index([tenantId, channel])
   @@map("connect_accounts")
 }
 

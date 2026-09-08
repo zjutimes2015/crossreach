@@ -34,8 +34,11 @@ describe('PLANS', () => {
     expect(tier('STARTER').socialChannels).toBe(0);
     expect(tier('STARTER').emailInboxes).toBe(1);
     expect(tier('GROWTH').socialChannels).toBe(1);
+    expect(tier('GROWTH').emailInboxes).toBe(2);
     expect(tier('PRO').socialChannels).toBe(2);
+    expect(tier('PRO').emailInboxes).toBe(3);
     expect(tier('ENTERPRISE').socialChannels).toBe(99);
+    expect(tier('ENTERPRISE').emailInboxes).toBe(99);
   });
 
   it('free plan maps onto the STARTER tier with a reduced grant', () => {

@@ -8,6 +8,7 @@ import { logger } from '../../utils/logger.js';
 import { sendWhatsAppMessage } from '../../channels/whatsapp/api.js';
 import type { WhatsAppChannelConfig } from '../../channels/types.js';
 import { sendWithDeliverability, DeliverabilityError } from '../../email/send.js';
+import { pickEmailAccount } from '../../email/deliverability.js';
 import { config } from '../../config/index.js';
 import {
   sendLinkedInAction,
@@ -305,9 +306,13 @@ async function dispatchToChannel(
 
   switch (job.channel) {
     case 'EMAIL': {
+      // Warm-up pool: pick the quietest healthy inbox on this tenant, then send
+      // under its own quota/pacing guards. The caller-supplied account only
+      // acts as a channel token — the actual SMTP box is chosen here.
+      const inbox = await pickEmailAccount(account.tenantId);
       const result = await sendWithDeliverability(
-        account,
-        account.tenantId,
+        inbox,
+        inbox.tenantId,
         {
           recipient: {
             address: recipient.address!,
@@ -324,7 +329,7 @@ async function dispatchToChannel(
         },
       );
       return {
-        accountId: account.id,
+        accountId: inbox.id,
         channel: 'email',
         action: 'outreach',
         resolvedAction: 'message',

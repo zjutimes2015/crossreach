@@ -368,7 +368,7 @@ src/
       playwright.ts              Playwright browser automation (message / connect / like)
     types.ts                     Unified MessageContent abstraction (8 message kinds)
   email/
-    deliverability.ts            Daily quota, send pacing, health-pause (bounce/complaint rate gating)
+    deliverability.ts            Daily quota, send pacing, health-pause, round-robin warm-up pool selection
     send.ts                      Hardened email path: guards + tracking + event ledger around SMTP
     tracking.ts                  Opaque tracking tokens, HTML instrumentation (pixel/links), event recording
     bounce.ts                    SES / SendGrid / Postmark delivery-event parsers (normalized to EmailEventType)
@@ -455,10 +455,10 @@ Build with `npm run build` before `docker build`.
 - [x] Mission Control dashboard (React: Overview / Billing / Connect / CRM Sync, `/dashboard/`)
 - [x] Commercial landing page (terminal aesthetic, Connect showcase, pricing)
 - [x] Email send service hardening (daily quotas, send pacing, health-pause, open/click/unsubscribe tracking, SES/SendGrid/Postmark bounce handling)
+- [x] Email warm-up pools (multiple inboxes behind a round-robin send queue)
 
 ### Next
 
-- [ ] Email warm-up pools (multiple inboxes behind a round-robin send queue)
 - [ ] Internal IM notifications (WeCom / Feishu / DingTalk) for team alerts
 - [ ] OAuth for multi-tenant onboarding (self-serve sign-up + API-key issuance)
 

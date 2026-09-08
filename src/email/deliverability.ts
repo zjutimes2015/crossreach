@@ -72,6 +72,77 @@ export function dailyLimitOf(account: ConnectAccount): number {
   return Number.isFinite(num) && num > 0 ? Math.floor(num) : DEFAULT_DAILY_LIMIT;
 }
 
+// ── Warm-up pool selection ──────────────────────────────────────────────────
+// EMAIL dispatch picks ONE inbox from the tenant's pool on each send. To keep
+// inboxes warm evenly (and out of the spam box) we prefer the account with the
+// lowest today-sent count among those that still have quota headroom. Paused or
+// saturated inboxes are skipped, then skipped-and-sorted by remaining budget.
+
+/**
+ * Pure round-robin-preference selector: from a list of inbox load rows pick the
+ * id with the fewest sent today among those under their daily cap. Returns null
+ * when every inbox is at/over its cap (or the list is empty — caller decides).
+ */
+export function chooseAccountByLoad(
+  rows: Array<{ id: string; sent: number; dailyLimit: number }>,
+): string | null {
+  const candidates = rows.filter((r) => r.sent < r.dailyLimit);
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.sent - b.sent);
+  return candidates[0].id;
+}
+
+/**
+ * Choose the next EMAIL inbox for a tenant's warm-up pool, skipping any that is
+ * paused for health or has hit its daily cap. Throws a DeliverabilityError when
+ * no inbox is connected or none currently has quota headroom.
+ */
+export async function pickEmailAccount(
+  tenantId: string,
+  now: Date = new Date(),
+): Promise<ConnectAccount> {
+  const accounts = await prisma.connectAccount.findMany({
+    where: { tenantId, channel: 'EMAIL', status: 'ACTIVE' },
+  });
+  if (accounts.length === 0) {
+    throw new DeliverabilityError(
+      400,
+      'no_email_account_connected',
+      'No email inbox is connected. Add one under Connect, then retry.',
+      false,
+    );
+  }
+
+  const nowMs = now.getTime();
+  const notPaused = accounts.filter((a) => {
+    const cfg = (a.config as Record<string, unknown>) ?? {};
+    const until = typeof cfg.pausedUntil === 'string' ? Date.parse(cfg.pausedUntil) : NaN;
+    return !(Number.isFinite(until) && until > nowMs);
+  });
+  if (notPaused.length === 0) {
+    throw new DeliverabilityError(
+      429,
+      'all_email_accounts_health_paused',
+      'Every connected inbox is cooling down after a health breach. Try again later.',
+      true,
+    );
+  }
+
+  const loads = await Promise.all(
+    notPaused.map(async (a) => ({ id: a.id, sent: await countSentToday(a.id, now), dailyLimit: dailyLimitOf(a) })),
+  );
+  const pick = chooseAccountByLoad(loads);
+  if (!pick) {
+    throw new DeliverabilityError(
+      429,
+      'all_email_accounts_at_limit',
+      'Every connected inbox has reached its daily send limit. Try again tomorrow.',
+      true,
+    );
+  }
+  return accounts.find((a) => a.id === pick)!;
+}
+
 // ── Store-backed assessments ───────────────────────────────────────────────
 
 /** How many tracked SENT events this account fired since the UTC day boundary. */

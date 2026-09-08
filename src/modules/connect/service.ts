@@ -5,8 +5,10 @@
 // dispatch outreach tasks to the account.
 //
 // Plan enforcement: each tier limits how many email inboxes and social
-// channels (LinkedIn + WhatsApp combined) a tenant can connect. STARTER has
-// 1 inbox / 0 social; GROWTH 1 / 1; PRO 1 / 2; ENTERPRISE unlimited.
+// channels (LinkedIn + WhatsApp combined) a tenant can connect. EMAIL inboxes
+// form a warm-up pool (multiple allowed, bounded by emailInboxes); social
+// channels stay single per channel. STARTER 1/0, GROWTH 2/1, PRO 3/2, ENTERPRISE
+// 99/99.
 
 import { prisma } from '../../db/prisma.js';
 import { logger } from '../../utils/logger.js';
@@ -168,18 +170,22 @@ export async function createConnectAccount(
   validateConfig(req.channel, req.config);
   await enforceQuota(tenantId, tenantPlan, req.channel);
 
-  // Schema enforces @@unique([tenantId, channel]) — one account per channel per
-  // tenant. Detect duplicates up front so we return a clean 409 instead of a
-  // raw Prisma unique-constraint error.
-  const existing = await prisma.connectAccount.findFirst({
-    where: { tenantId, channel: req.channel },
-  });
-  if (existing) {
-    throw new ConnectError(
-      409,
-      'channel_already_connected',
-      `A ${req.channel} account is already connected for this tenant`,
-    );
+  // Schema enforces @@unique([tenantId, name]) — inbox names must be unique.
+  // LinkedIn / WhatsApp remain single-account per tenant (each channel may only
+  // be connected once), so detect that early for a clean 409 instead of a raw
+  // Prisma unique-constraint error. EMAIL inboxes join the tenant's warm-up
+  // pool, bounded only by the plan's emailInboxes quota (checked above).
+  if (req.channel !== 'EMAIL') {
+    const existing = await prisma.connectAccount.findFirst({
+      where: { tenantId, channel: req.channel },
+    });
+    if (existing) {
+      throw new ConnectError(
+        409,
+        'channel_already_connected',
+        `A ${req.channel} account is already connected for this tenant`,
+      );
+    }
   }
 
   const account = await prisma.connectAccount.create({

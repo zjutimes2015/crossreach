@@ -18,6 +18,7 @@ import {
   bounceRate,
   assessHealth,
   dailyLimitOf,
+  chooseAccountByLoad,
   DEFAULT_DAILY_LIMIT,
 } from '../src/email/deliverability.js';
 import type { ConnectAccount } from '@prisma/client';
@@ -86,6 +87,44 @@ describe('deliverability math (daily quota / health)', () => {
     expect(dailyLimitOf(fakeAccount({ dailyLimit: '150' }))).toBe(150);
     expect(dailyLimitOf(fakeAccount({ dailyLimit: -3 }))).toBe(DEFAULT_DAILY_LIMIT);
     expect(dailyLimitOf(fakeAccount({}))).toBe(DEFAULT_DAILY_LIMIT);
+  });
+});
+
+describe('warm-up pool selection', () => {
+  it('picks the inbox with the fewest sends among those under quota', () => {
+    const pick = chooseAccountByLoad([
+      { id: 'a', sent: 30, dailyLimit: 60 },
+      { id: 'b', sent: 12, dailyLimit: 60 },
+      { id: 'c', sent: 45, dailyLimit: 60 },
+    ]);
+    expect(pick).toBe('b');
+  });
+
+  it('skips inboxes that have hit their daily cap', () => {
+    const pick = chooseAccountByLoad([
+      { id: 'a', sent: 60, dailyLimit: 60 }, // saturated
+      { id: 'b', sent: 59, dailyLimit: 60 },
+    ]);
+    expect(pick).toBe('b');
+  });
+
+  it('returns null when every inbox is at/over its cap', () => {
+    const pick = chooseAccountByLoad([
+      { id: 'a', sent: 60, dailyLimit: 60 },
+      { id: 'b', sent: 70, dailyLimit: 60 },
+    ]);
+    expect(pick).toBeNull();
+    expect(chooseAccountByLoad([])).toBeNull();
+  });
+
+  it('handles differing per-account limits by sent count, not absolute spare', () => {
+    // b has more absolute spare (15) than a (5) — but selection is by lowest
+    // sent count among under-quota boxes, which is the tie-break for even warm-up.
+    const pick = chooseAccountByLoad([
+      { id: 'a', sent: 55, dailyLimit: 60 }, // spare 5
+      { id: 'b', sent: 20, dailyLimit: 35 }, // spare 15
+    ]);
+    expect(pick).toBe('b');
   });
 });
 
