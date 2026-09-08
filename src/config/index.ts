@@ -25,6 +25,10 @@ const envSchema = z.object({
 
   // Meta App
   META_APP_SECRET: z.string().default(''),
+
+  // Public origin for email tracking links/pixels (open/click/unsubscribe).
+  // Set to the externally reachable base URL of this deployment.
+  PUBLIC_BASE_URL: z.string().url().default('http://localhost:3000'),
 });
 
 const parsed = envSchema.safeParse(process.env);

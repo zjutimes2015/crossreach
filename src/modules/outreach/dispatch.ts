@@ -7,8 +7,8 @@ import { prisma } from '../../db/prisma.js';
 import { logger } from '../../utils/logger.js';
 import { sendWhatsAppMessage } from '../../channels/whatsapp/api.js';
 import type { WhatsAppChannelConfig } from '../../channels/types.js';
-import { sendEmail } from '../../channels/email/api.js';
-import type { EmailAccountConfig, EmailRecipient, EmailContent } from '../../channels/email/api.js';
+import { sendWithDeliverability, DeliverabilityError } from '../../email/send.js';
+import { config } from '../../config/index.js';
 import {
   sendLinkedInAction,
   likeRelevantPost,
@@ -262,7 +262,11 @@ async function executeJob(jobId: string): Promise<void> {
 
     logger.info({ jobId, result }, 'Outreach job succeeded');
   } catch (err) {
-    const code = err instanceof Error ? err.message : 'action_failed';
+    const isGuard =
+      err instanceof DeliverabilityError
+        ? { code: err.code, retryable: err.retryable }
+        : null;
+    const code = isGuard ? isGuard.code : err instanceof Error ? err.message : 'action_failed';
     const message = err instanceof Error ? err.message : 'The outreach action failed';
 
     await prisma.outreachJob.update({
@@ -270,7 +274,7 @@ async function executeJob(jobId: string): Promise<void> {
       data: {
         status: 'FAILED',
         finishedAt: new Date(),
-        error: { code, message, retryable: false } as object,
+        error: { code, message, retryable: isGuard ? isGuard.retryable : false } as object,
       },
     });
 
@@ -301,29 +305,31 @@ async function dispatchToChannel(
 
   switch (job.channel) {
     case 'EMAIL': {
-      const config = account.config as unknown as EmailAccountConfig;
-      const result = await sendEmail(
-        config,
-        { address: recipient.address, name: recipient.name },
+      const result = await sendWithDeliverability(
+        account,
+        account.tenantId,
         {
+          recipient: {
+            address: recipient.address!,
+            name: recipient.name,
+          },
           subject: content.subject as string,
           text: content.text as string | undefined,
           html: content.html as string | undefined,
-          attachments: content.attachments as EmailContent['attachments'],
+          attachments: content.attachments as
+            | Array<{ filename: string; contentBase64: string; contentType?: string }>
+            | undefined,
+          jobId: (job as { id?: string }).id,
+          baseUrl: config.PUBLIC_BASE_URL,
         },
       );
-      if (result.status === 'failed') {
-        // Channel adapters never throw on send failure — they return
-        // { status:'failed' }. Surface it as an error so executeJob marks the
-        // job FAILED and refunds the upfront-charged credit.
-        throw new Error(result.error ?? 'Email send failed');
-      }
       return {
         accountId: account.id,
         channel: 'email',
         action: 'outreach',
         resolvedAction: 'message',
         messageId: result.messageId,
+        trackToken: result.trackToken,
         status: 'accepted',
       };
     }

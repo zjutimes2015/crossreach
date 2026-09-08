@@ -887,3 +887,60 @@ model WebhookEvent {
   @@index([tenantId, createdAt])
   @@map("webhook_events")
 }
+
+// ── Email deliverability: tracking tokens + delivery events ─────────────────
+// One token per send: it powers the open pixel, click-through redirect,
+// unsubscribe, and the custom SMTP header that bounce webhooks echo back so we
+// can attribute a bounce/complaint to the exact send (and account, for health).
+
+model EmailTrackingToken {
+  id          String    @id @default(cuid())
+  // Single-use opaque token; also placed in the `X-CrossReach-Token` SMTP header
+  token       String    @unique
+  tenantId    String
+  // The connect-account that sent this — drives quota counters + health
+  accountId   String?
+  // Link back to the outreach job / customer for dashboards + stopIfReplied
+  jobId       String?
+  customerId  String?
+  recipient   String
+  messageId   String?
+  unsubscribed Boolean  @default(false)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+
+  @@index([tenantId, createdAt])
+  @@map("email_tracking_tokens")
+}
+
+enum EmailEventType {
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  BOUNCED_SOFT
+  BOUNCED_HARD
+  COMPLAINED
+  UNSUBSCRIBED
+}
+
+model EmailEvent {
+  id         String         @id @default(cuid())
+  tenantId   String
+  accountId  String?
+  // Non-null when the event is attributable to a tracked send
+  trackToken String?
+  type       EmailEventType
+  recipient  String?
+  messageId  String?
+  smtpCode   Int?
+  detail     String?
+  createdAt  DateTime       @default(now())
+
+  // A token's OPENED/CLICKED/complaint fire repeatedly — keep ONE row per kind.
+  @@unique([trackToken, type])
+  @@index([tenantId, createdAt])
+  @@index([accountId, type])
+  @@index([recipient])
+  @@map("email_events")
+}

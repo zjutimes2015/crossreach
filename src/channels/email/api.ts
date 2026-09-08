@@ -30,6 +30,8 @@ export interface EmailContent {
     contentBase64: string;
     contentType?: string;
   }>;
+  // Custom message headers (e.g. the X-CrossReach-Token used for bounce attribution)
+  headers?: Record<string, string>;
 }
 
 export interface EmailSendResult {
@@ -79,6 +81,7 @@ export async function sendEmail(
       subject: content.subject,
       text: content.text,
       html: content.html,
+      headers: content.headers,
       attachments: content.attachments?.map((a) => ({
         filename: a.filename,
         content: Buffer.from(a.contentBase64, 'base64'),

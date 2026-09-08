@@ -343,12 +343,12 @@ The sequence scheduler runs every 60 seconds, executes due steps, and auto-stops
 public/                          Commercial landing page (HTML/CSS)
 dashboard/                       Mission Control console (React + Vite, built to dist/)
 prisma/
-  schema.prisma                  Multi-tenant data model (27 models, 26 enums)
+  schema.prisma                  Multi-tenant data model (29 models, 27 enums)
   seed.ts                         Demo data (tenant + channel + admin + API key)
 src/
   api/
-    routes/                      REST endpoints
-      webhooks.ts                  WhatsApp + Stripe + CRM inbound webhooks
+    routes/
+      webhooks.ts                  WhatsApp + Stripe + CRM inbound webhooks; email delivery feedback (bounce/complaint) + tracking
       ai.ts                        AI template CRUD + content generation
       growth.ts                    Sequences + campaigns
       customers.ts  conversations.ts  routing.ts  leads.ts
@@ -367,6 +367,11 @@ src/
       api.ts                     Channel-agnostic LinkedIn adapter
       playwright.ts              Playwright browser automation (message / connect / like)
     types.ts                     Unified MessageContent abstraction (8 message kinds)
+  email/
+    deliverability.ts            Daily quota, send pacing, health-pause (bounce/complaint rate gating)
+    send.ts                      Hardened email path: guards + tracking + event ledger around SMTP
+    tracking.ts                  Opaque tracking tokens, HTML instrumentation (pixel/links), event recording
+    bounce.ts                    SES / SendGrid / Postmark delivery-event parsers (normalized to EmailEventType)
   modules/
     ai/content-generator.ts      LLM call + variable substitution + template fallback
     discovery/
@@ -431,7 +436,7 @@ Build with `npm run build` before `docker build`.
 
 ### Done
 
-- [x] Multi-tenant Prisma schema (27 models, 26 enums)
+- [x] Multi-tenant Prisma schema (29 models, 27 enums)
 - [x] WhatsApp Business Cloud API adapter (webhook + send)
 - [x] Cross-channel sequence engine (7 action types)
 - [x] AI content generation (LLM + template fallback)
@@ -449,10 +454,11 @@ Build with `npm run build` before `docker build`.
 - [x] Stripe billing checkout (one-off top-ups + monthly subscriptions, webhook-reconciled)
 - [x] Mission Control dashboard (React: Overview / Billing / Connect / CRM Sync, `/dashboard/`)
 - [x] Commercial landing page (terminal aesthetic, Connect showcase, pricing)
+- [x] Email send service hardening (daily quotas, send pacing, health-pause, open/click/unsubscribe tracking, SES/SendGrid/Postmark bounce handling)
 
 ### Next
 
-- [ ] Email send service hardening (deliverability, warm-up pools, bounce/webhook handling)
+- [ ] Email warm-up pools (multiple inboxes behind a round-robin send queue)
 - [ ] Internal IM notifications (WeCom / Feishu / DingTalk) for team alerts
 - [ ] OAuth for multi-tenant onboarding (self-serve sign-up + API-key issuance)
 
