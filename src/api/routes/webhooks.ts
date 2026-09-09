@@ -174,9 +174,14 @@ export async function webhookRoutes(server: FastifyInstance) {
   // Unsubscribe: flips the token terminal and records the event.
   server.get('/_track/:token/unsubscribe', async (req: FastifyRequest, reply: FastifyReply) => {
     const { token } = req.params as { token: string };
-    await recordEmailEvent({ token, type: 'UNSUBSCRIBED' }).catch((err) =>
-      logger.warn({ err, token }, 'unsubscribe event record failed'),
-    );
+    // Resolve recipient from the tracking token so the event record is
+    // attributable for bounce/complaint analysis.
+    const trackToken = await prisma.emailTrackingToken.findUnique({ where: { token } });
+    await recordEmailEvent({
+      token,
+      type: 'UNSUBSCRIBED',
+      recipient: trackToken?.recipient ?? undefined,
+    }).catch((err) => logger.warn({ err, token }, 'unsubscribe event record failed'));
     await prisma.emailTrackingToken
       .updateMany({ where: { token }, data: { unsubscribed: true } })
       .catch(() => {});

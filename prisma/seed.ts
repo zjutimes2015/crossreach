@@ -1,5 +1,6 @@
 import { prisma } from '../src/db/prisma.js';
 import { logger } from '../src/utils/logger.js';
+import { hashPassword } from '../src/modules/auth/passwords.js';
 
 /**
  * Seed a demo tenant + WhatsApp channel + admin user so the API is testable
@@ -43,7 +44,8 @@ async function main() {
 
   logger.info('Seeded WhatsApp channel');
 
-  // 3. Admin user
+  // 3. Admin user (bcrypt-hashed password so email+password login works)
+  const adminPassword = process.env.DEMO_ADMIN_PASSWORD || 'changeme';
   await prisma.user.upsert({
     where: { email: 'admin@demo.com' },
     update: {},
@@ -52,7 +54,8 @@ async function main() {
       email: 'admin@demo.com',
       name: 'Demo Admin',
       role: 'ADMIN',
-      password: 'changeme',
+      authProvider: 'PASSWORD',
+      password: await hashPassword(adminPassword),
     },
   });
 
@@ -60,6 +63,7 @@ async function main() {
   logger.info('──────────────────────────────────');
   logger.info('Demo API Key:  demo-api-key-001');
   logger.info('Admin email:   admin@demo.com');
+  logger.info(`Admin password: ${adminPassword}`);
   logger.info('──────────────────────────────────');
 }
 

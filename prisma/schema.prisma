@@ -150,7 +150,13 @@ model User {
   email     String   @unique
   name      String
   role      UserRole @default(AGENT)
-  password  String
+  // How this user authenticates. PASSWORD = email + bcrypt hash below;
+  // GOOGLE = reserved for OAuth sign-in (no password stored).
+  authProvider AuthProvider @default(PASSWORD)
+  // bcrypt hash. Null for GOOGLE-provided identities.
+  password  String?
+  // Reserved for Google OAuth — the Google account's stable subject id.
+  googleId  String?  @unique
   // Routing: agent skills (e.g. ["english", "presales"]) and availability
   skills    String[] @default([])
   isOnline  Boolean  @default(true)
@@ -164,6 +170,11 @@ model User {
 
   @@index([tenantId])
   @@map("users")
+}
+
+enum AuthProvider {
+  PASSWORD
+  GOOGLE
 }
 
 enum UserRole {

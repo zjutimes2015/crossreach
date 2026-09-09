@@ -1,9 +1,13 @@
 // ── API client ────────────────────────────────────────────────────────────────
-// Reads the tenant API key from localStorage (set on the login gate) and talks
+// Reads the tenant API key from localStorage (set after signup/login) and talks
 // to the CrossReach backend through the Vite proxy (/api → localhost:3000).
+// Session (JWT) + identity are kept alongside for /api/auth/me and the header.
 
 const KEY_STORAGE = 'cr_api_key';
+const TOKEN_STORAGE = 'cr_token';
+const SESSION_STORAGE = 'cr_session';
 const BASE = '/api/v1';
+const AUTH_BASE = '/api/auth';
 
 export function getApiKey(): string {
   return localStorage.getItem(KEY_STORAGE) ?? '';
@@ -15,6 +19,63 @@ export function setApiKey(key: string) {
 
 export function clearApiKey() {
   localStorage.removeItem(KEY_STORAGE);
+}
+
+// ── Dashboard session (JWT from /api/auth) ──────────────────────────────────
+// The backend returns `{ token, apiKey, user, tenant }` on signup/login/me.
+// The apiKey stays the credential for all /api/v1/* calls (unchanged app
+// architecture); the token + identity power the gate and the account bar.
+
+export function getToken(): string {
+  return localStorage.getItem(TOKEN_STORAGE) ?? '';
+}
+
+export function setToken(token: string) {
+  localStorage.setItem(TOKEN_STORAGE, token);
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  authProvider: string;
+}
+
+export interface AuthTenant {
+  id: string;
+  name: string;
+  plan: string;
+  status: string;
+}
+
+export interface AuthSession {
+  token: string;
+  apiKey: string;
+  user: AuthUser;
+  tenant: AuthTenant;
+}
+
+export function getSession(): AuthSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE);
+    return raw ? (JSON.parse(raw) as AuthSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setSession(session: AuthSession) {
+  // Keep legacy storage in sync so every existing page keeps working.
+  setToken(session.token);
+  setApiKey(session.apiKey);
+  localStorage.setItem(SESSION_STORAGE, JSON.stringify(session));
+}
+
+export function clearSession() {
+  clearApiKey();
+  localStorage.removeItem(TOKEN_STORAGE);
+  localStorage.removeItem(SESSION_STORAGE);
 }
 
 export class ApiError extends Error {
@@ -53,6 +114,48 @@ export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
+};
+
+// ── Auth (no x-api-key — these endpoints sit outside the tenant scope) ──────
+
+async function authRequest<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await fetch(`${AUTH_BASE}${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: { code?: string; message?: string } } & T;
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      (data as { error?: { code?: string } }).error?.code ?? 'request_failed',
+      (data as { error?: { message?: string } }).error?.message ?? `Request failed (${res.status})`,
+    );
+  }
+  return data;
+}
+
+export const authApi = {
+  /** Email + password login → persists apiKey + JWT session. */
+  async login(email: string, password: string): Promise<AuthSession> {
+    const session = await authRequest<AuthSession>('POST', '/login', { email, password });
+    setSession(session);
+    return session;
+  },
+  /** Self-serve signup → provisions tenant + admin and signs the user in. */
+  async signup(input: { name: string; companyName: string; email: string; password: string }): Promise<AuthSession> {
+    const session = await authRequest<AuthSession>('POST', '/signup', input);
+    setSession(session);
+    return session;
+  },
+  /** Refresh the session from the JWT — used on page reload. */
+  async me(): Promise<AuthSession> {
+    const session = await authRequest<AuthSession>('GET', '/me', undefined, getToken());
+    setSession(session);
+    return session;
+  },
 };
 
 // ── Typed responses ──────────────────────────────────────────────────────────

@@ -62,3 +62,50 @@ jobs:
       - name: Build dashboard (typecheck + Vite)
         working-directory: dashboard
         run: npm run build
+
+  e2e:
+    name: E2E · contract tests (real server + real DB, fake upstreams)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: crossreach
+          POSTGRES_PASSWORD: crossreach_dev
+          POSTGRES_DB: crossreach
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U crossreach"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      CI: "true"
+      DATABASE_URL: postgresql://crossreach:crossreach_dev@localhost:5432/crossreach?schema=public
+      E2E_DATABASE_URL: postgresql://crossreach:crossreach_dev@localhost:5432/crossreach?schema=public
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Push schema to database
+        run: npx prisma db push --accept-data-loss
+
+      - name: E2E contract tests
+        run: npm run test:e2e

@@ -2,8 +2,9 @@ import { formatOutbound } from './transform.js';
 import type { MessageContent, OutboundMessage, SendResult } from '../types.js';
 import type { WhatsAppChannelConfig } from '../types.js';
 import { logger } from '../../utils/logger.js';
+import { config } from '../../config/index.js';
 
-const GRAPH_API_BASE = 'https://graph.facebook.com';
+const GRAPH_API_BASE = config.WHATSAPP_GRAPH_BASE_URL;
 
 interface GraphApiResponse {
   messaging_product: string;

@@ -14,6 +14,7 @@ import { discoveryRoutes } from './routes/discovery.js';
 import { billingRoutes } from './routes/billing.js';
 import { connectRoutes } from './routes/connect.js';
 import { stripeRoutes } from './routes/billing-stripe.js';
+import { authRoutes } from './routes/auth.js';
 import { crmRoutes } from './routes/crm.js';
 import { tenantMiddleware } from './middleware/tenant.js';
 
@@ -61,6 +62,11 @@ export async function buildServer() {
   // Webhook routes — no auth, verified by HMAC signature / verify token
   await server.register(webhookRoutes);
   await server.register(leadRoutes);
+
+  // Self-serve auth (signup / login / me) — registered OUTSIDE the
+  // tenantMiddleware scope so no x-api-key is required. On success these
+  // return the tenant API key which the dashboard stores for /v1/* calls.
+  await server.register(authRoutes, { prefix: '/api/auth' });
 
   // API routes — require x-api-key header (tenant resolution)
   await server.register(

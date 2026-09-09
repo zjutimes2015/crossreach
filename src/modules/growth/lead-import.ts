@@ -4,6 +4,7 @@ import { findOrCreateCustomer } from '../customers/service.js';
 import { findOrCreateConversation } from '../conversations/service.js';
 import { sendMessage } from '../messages/service.js';
 import { enrollInSequence } from './sequences.js';
+import { notifyTeamAsync } from '../notifications/im.js';
 import type { LeadPlatform } from '@prisma/client';
 
 // ── Unified lead shape (normalized from all ad platforms) ─────────────────
@@ -253,6 +254,14 @@ export async function processLead(
     { tenantId, customerId: customer.id, platform: lead.platform },
     'Lead processed successfully',
   );
+
+  // Alert the team so a hot lead gets a quick response.
+  notifyTeamAsync({
+    title: `🆕 New ${lead.platform} lead`,
+    text: `${lead.name ?? 'Prospect'} (${lead.phone})${
+      lead.fields?.country ? ` · ${lead.fields.country}` : ''
+    } was enrolled and is awaiting engagement.`,
+  });
 
   return { success: true, customerId: customer.id };
 }
