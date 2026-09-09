@@ -203,3 +203,108 @@ export interface CrmIntegration {
   active: boolean;
   createdAt: string;
 }
+
+// ── Compliance (外呼合规证据链) ─────────────────────────────────────────────
+
+export interface SuppressionEntry {
+  id: string;
+  channel: string;
+  contact: string;
+  reason: string;
+  source: string | null;
+  note: string | null;
+  active: boolean;
+  createdAt: string;
+  removedAt: string | null;
+}
+
+export interface EvidenceItem {
+  ts: string;
+  kind: string;
+  channel: string;
+  contact: string;
+  accountId?: string | null;
+  refId?: string | null;
+  status?: string | null;
+  detail?: string | null;
+}
+
+export interface ComplianceFilters {
+  channel?: string;
+  reason?: string;
+  contact?: string;
+  includeInactive?: boolean;
+  limit?: number;
+  from?: string;
+  to?: string;
+}
+
+function toQuery(filters: ComplianceFilters): string {
+  const parts: string[] = [];
+  const push = (key: string, value: string | number | boolean | undefined) => {
+    if (value === undefined || value === '') return;
+    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+  };
+  push('channel', filters.channel);
+  push('reason', filters.reason);
+  push('contact', filters.contact);
+  push('includeInactive', filters.includeInactive);
+  push('limit', filters.limit);
+  push('from', filters.from);
+  push('to', filters.to);
+  return parts.join('&');
+}
+
+export const complianceApi = {
+  async suppressions(filters: ComplianceFilters = {}): Promise<SuppressionEntry[]> {
+    const data = await api.get<{ suppressions: SuppressionEntry[] }>(
+      `/compliance/suppressions${filters ? `?${toQuery(filters)}` : ''}`,
+    );
+    return data.suppressions;
+  },
+
+  async addSuppression(input: {
+    channel: string;
+    contact: string;
+    reason?: string;
+    note?: string;
+  }): Promise<SuppressionEntry> {
+    const data = await api.post<{ suppression: SuppressionEntry }>('/compliance/suppressions', {
+      channel: input.channel,
+      contact: input.contact,
+      reason: input.reason ?? 'MANUAL',
+      note: input.note || undefined,
+    });
+    return data.suppression;
+  },
+
+  async removeSuppression(id: string): Promise<void> {
+    await api.del(`/compliance/suppressions/${id}`);
+  },
+
+  async evidence(filters: ComplianceFilters = {}): Promise<{ items: EvidenceItem[]; truncated: boolean }> {
+    return api.get<{ items: EvidenceItem[]; truncated: boolean }>(
+      `/compliance/evidence?${toQuery(filters)}`,
+    );
+  },
+
+  /** Fetch the evidence CSV and trigger a browser download. */
+  async exportEvidence(filters: ComplianceFilters = {}): Promise<void> {
+    const res = await fetch(`${BASE}/compliance/evidence/export?${toQuery(filters)}`, {
+      headers: { 'x-api-key': getApiKey() },
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: { code?: string; message?: string } };
+      throw new ApiError(res.status, data?.error?.code ?? 'request_failed', data?.error?.message ?? `Export failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'crossreach-compliance.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+};

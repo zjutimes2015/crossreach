@@ -26,6 +26,8 @@ import {
 import { prisma } from '../db/prisma.js';
 import { logger } from '../utils/logger.js';
 import type { ConnectAccount } from '@prisma/client';
+import { isSuppressed } from '../modules/compliance/suppression.js';
+import { ComplianceBlockedError } from '../modules/compliance/errors.js';
 
 export interface DeliverabilitySendOptions {
   recipient: EmailRecipient;
@@ -62,6 +64,12 @@ export async function sendWithDeliverability(
   tenantId: string,
   opts: DeliverabilitySendOptions,
 ): Promise<DeliverabilitySendResult> {
+  // 0. Compliance gate — never contact a suppressed recipient again. This
+  //    runs before any quota/health read or SMTP attempt so a blocked send
+  //    costs nothing and the caller can surface the matched suppression.
+  const suppressed = await isSuppressed(tenantId, 'EMAIL', opts.recipient.address);
+  if (suppressed) throw new ComplianceBlockedError(suppressed);
+
   // 1. Guards: cooldown pause → daily cap → pacing.
   await assertCanSend(account);
 

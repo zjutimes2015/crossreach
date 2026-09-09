@@ -2,6 +2,7 @@ import { prisma } from '../../db/prisma.js';
 import { logger } from '../../utils/logger.js';
 import { sendWhatsAppMessage } from '../../channels/whatsapp/api.js';
 import type { WhatsAppChannelConfig } from '../../channels/types.js';
+import { isSuppressed } from '../compliance/suppression.js';
 import type { Customer, Campaign } from '@prisma/client';
 
 // ── Recipient filter definition ───────────────────────────────────────────
@@ -138,6 +139,23 @@ export async function startCampaign(
             where: { id: recipient.id },
             data: { status: 'SKIPPED', error: 'Customer not found' },
           });
+          return;
+        }
+
+        // Compliance gate: suppressed numbers are skipped, never broadcast to.
+        const suppressed = await isSuppressed(tenantId, 'WHATSAPP', customer.externalId);
+        if (suppressed) {
+          await prisma.campaignRecipient.update({
+            where: { id: recipient.id },
+            data: {
+              status: 'SKIPPED',
+              error: `Suppressed contact — ${suppressed.reason.toLowerCase()} since ${suppressed.createdAt.toISOString()}`,
+            },
+          });
+          logger.info(
+            { customerId: customer.id, reason: suppressed.reason },
+            'Campaign recipient skipped — suppressed',
+          );
           return;
         }
 

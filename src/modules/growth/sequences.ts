@@ -2,6 +2,7 @@ import { prisma } from '../../db/prisma.js';
 import { logger } from '../../utils/logger.js';
 import { sendWhatsAppMessage } from '../../channels/whatsapp/api.js';
 import { generateOutreachContent } from '../ai/content-generator.js';
+import { isSuppressed } from '../compliance/suppression.js';
 import type { WhatsAppChannelConfig } from '../../channels/types.js';
 import type {
   Sequence,
@@ -144,7 +145,7 @@ async function executeStep(
   },
   customer: { id: string; externalId: string; name: string | null; phone: string | null; email: string | null; source: string | null; tags: string[]; attributes: unknown },
   now: Date,
-): Promise<{ sent: boolean }> {
+): Promise<{ sent: boolean; suppressed?: boolean }> {
   const step = enrollment.currentStep;
   const sequence = enrollment.sequence;
 
@@ -161,6 +162,29 @@ async function executeStep(
   if (!channel) {
     logger.warn({ channelId }, 'Channel not found for sequence step');
     return { sent: false };
+  }
+
+  // Compliance gate: anyone suppressed (opted out / complained / hard bounce)
+  // is never contacted again, even from an active sequence.
+  const sendsMessage =
+    step.actionType === 'SEND_TEMPLATE' || step.actionType === 'SEND_AI_OUTREACH';
+  if (sendsMessage && (channel.type === 'WHATSAPP' || channel.type === 'EMAIL')) {
+    const contactRaw =
+      channel.type === 'WHATSAPP' ? customer.externalId : (customer.email ?? '');
+    if (contactRaw) {
+      const suppressed = await isSuppressed(
+        enrollment.tenantId,
+        channel.type === 'WHATSAPP' ? 'WHATSAPP' : 'EMAIL',
+        contactRaw,
+      );
+      if (suppressed) {
+        logger.info(
+          { enrollmentId: enrollment.id, customerId: customer.id, reason: suppressed.reason },
+          'Sequence step skipped — recipient suppressed',
+        );
+        return { sent: false, suppressed: true };
+      }
+    }
   }
 
   switch (step.actionType) {
@@ -329,6 +353,20 @@ export async function processDueSteps(): Promise<{
 
     // Execute the step's action
     const result = await executeStep(enrollment as never, customer, now);
+
+    // Recipient suppression is a terminal stop — consent was withdrawn, so the
+    // whole enrollment halts instead of advancing to later steps.
+    if (result.suppressed) {
+      await prisma.sequenceEnrollment.update({
+        where: { id: enrollment.id },
+        data: { status: 'STOPPED', currentStepId: null, nextStepAt: null },
+      });
+      logger.info(
+        { enrollmentId: enrollment.id, customerId: enrollment.customerId },
+        'Sequence stopped — recipient is suppressed',
+      );
+      continue;
+    }
 
     if (result.sent) {
       sent++;

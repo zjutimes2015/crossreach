@@ -43,6 +43,7 @@ model Tenant {
   crmIntegrations CrmIntegration[]
   webhookEvents  WebhookEvent[]
   paymentEvents  PaymentEvent[]
+  suppressions  Suppression[]
 
   @@map("tenants")
 }
@@ -958,4 +959,56 @@ model EmailEvent {
   @@index([accountId, type])
   @@index([recipient])
   @@map("email_events")
+}
+
+// ── Compliance: suppression registry (外呼合规证据链) ───────────────────────
+// Tenant-scoped, append-safe registry of recipients who must NOT be contacted
+// again: unsubscribe clicks, spam complaints and hard bounces are auto-added
+// from the email feedback path; WhatsApp/LinkedIn/manual entries can be added
+// through the compliance API. Every outbound path checks this list before
+// sending and hard-blocks suppressed recipients (job FAILED/skipped + refund),
+// which keeps the "we stopped contacting them" proof available for audit.
+//
+// Soft-delete only: `active=false` + `removedAt` stop the gate (申诉/解除) while
+// the original row stays in the ledger for evidence. Re-adding the same contact
+// reactivates the row and keeps the ORIGINAL createdAt (first suppressed-on
+// date) as the compliance basis.
+
+model Suppression {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Which contact identity the block applies to (see compliance/suppression.ts
+  // for normalization: lowercase email / digit-only phone / trimmed URL).
+  channel   SuppressionChannel
+  contact   String
+  // Why the recipient was suppressed (evidence category).
+  reason    SuppressionReason
+  // Provenance: tracking token id, provider message id, or 'manual' via API.
+  source    String?
+  note      String?
+  // Active entries gate sends. Deactivated rows remain as audit history.
+  active    Boolean  @default(true)
+  removedAt DateTime?
+  // Original suppressed-on date is preserved when a removed row is re-added.
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, channel, contact])
+  @@index([tenantId])
+  @@index([tenantId, channel])
+  @@index([tenantId, createdAt])
+  @@map("suppressions")
+}
+
+enum SuppressionChannel {
+  EMAIL
+  WHATSAPP
+  LINKEDIN
+}
+
+enum SuppressionReason {
+  UNSUBSCRIBED   // recipient clicked the unsubscribe link / asked to stop
+  COMPLAINED     // spam complaint from the mailbox provider
+  BOUNCED_HARD   // permanent delivery failure (invalid / dead address)
+  MANUAL         // tenant added it by hand (e.g. customer asked in a call)
 }

@@ -9,8 +9,9 @@ import { OverviewPage } from './pages/Overview';
 import { BillingPage } from './pages/Billing';
 import { ConnectPage } from './pages/Connect';
 import { CrmPage } from './pages/Crm';
+import { CompliancePage } from './pages/Compliance';
 
-type Tab = 'overview' | 'billing' | 'connect' | 'crm';
+type Tab = 'overview' | 'billing' | 'connect' | 'crm' | 'compliance';
 type GateMode = 'login' | 'signup' | 'apikey';
 
 const TABS: Array<{ id: Tab; label: string; ico: string }> = [
@@ -18,6 +19,7 @@ const TABS: Array<{ id: Tab; label: string; ico: string }> = [
   { id: 'billing', label: 'Billing', ico: '$' },
   { id: 'connect', label: 'Connect', ico: '⇄' },
   { id: 'crm', label: 'CRM Sync', ico: '↯' },
+  { id: 'compliance', label: 'Compliance', ico: '✓' },
 ];
 
 export default function App() {
@@ -103,6 +105,7 @@ export default function App() {
         {tab === 'billing' && <BillingPage />}
         {tab === 'connect' && <ConnectPage />}
         {tab === 'crm' && <CrmPage />}
+        {tab === 'compliance' && <CompliancePage />}
       </main>
     </div>
   );

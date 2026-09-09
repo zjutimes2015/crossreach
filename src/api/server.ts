@@ -15,6 +15,7 @@ import { billingRoutes } from './routes/billing.js';
 import { connectRoutes } from './routes/connect.js';
 import { stripeRoutes } from './routes/billing-stripe.js';
 import { authRoutes } from './routes/auth.js';
+import { complianceRoutes } from './routes/compliance.js';
 import { crmRoutes } from './routes/crm.js';
 import { tenantMiddleware } from './middleware/tenant.js';
 
@@ -83,6 +84,7 @@ export async function buildServer() {
       await api.register(connectRoutes);
       await api.register(stripeRoutes);
       await api.register(crmRoutes);
+      await api.register(complianceRoutes);
     },
     { prefix: '/api' },
   );

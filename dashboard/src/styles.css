@@ -192,6 +192,8 @@ textarea.input { resize: vertical; min-height: 72px; font-family: var(--serif); 
 .row.wrap { flex-wrap: wrap; }
 .spread { justify-content: space-between; }
 .grow { flex: 1; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); cursor: pointer; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.04em; }
+.check input { accent-color: var(--lime); }
 
 /* alerts */
 .alert {

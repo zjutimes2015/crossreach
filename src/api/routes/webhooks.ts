@@ -27,6 +27,7 @@ import { applyBounceFeedback } from '../../email/deliverability.js';
 import type { ParsedFeedbackEvent } from '../../email/bounce.js';
 import { prisma } from '../../db/prisma.js';
 import type { ConnectAccount } from '@prisma/client';
+import { addSuppression } from '../../modules/compliance/suppression.js';
 
 function rawBodyOf(req: FastifyRequest): string {
   return (req as FastifyRequest & { rawBody?: string }).rawBody ?? '';
@@ -143,6 +144,24 @@ export async function webhookRoutes(server: FastifyInstance) {
             detail: ev.detail,
           });
         }
+
+        // Hard bounces and spam complaints are permanent negative signals:
+        // never contact that address again → tenant suppression registry.
+        if ((ev.type === 'BOUNCED_HARD' || ev.type === 'COMPLAINED') && ev.recipient) {
+          const tenantId =
+            account?.tenantId ?? (await tenantIdForFeedback(ev.recipient));
+          if (tenantId) {
+            await addSuppression({
+              tenantId,
+              channel: 'EMAIL',
+              contact: ev.recipient,
+              reason: ev.type === 'COMPLAINED' ? 'COMPLAINED' : 'BOUNCED_HARD',
+              source: ev.messageId ? `provider:${ev.messageId}` : 'feedback-webhook',
+            }).catch((err) =>
+              logger.warn({ err, recipient: ev.recipient }, 'suppression add on negative feedback failed'),
+            );
+          }
+        }
       } catch (err) {
         logger.error({ err, event: ev.type }, 'Email feedback event handling failed');
       }
@@ -171,7 +190,9 @@ export async function webhookRoutes(server: FastifyInstance) {
     return reply.redirect('/');
   });
 
-  // Unsubscribe: flips the token terminal and records the event.
+  // Unsubscribe: flips the token terminal, records the event, and adds the
+  // recipient to the tenant's suppression registry so every channel stops
+  // contacting them from now on (not just this one token).
   server.get('/_track/:token/unsubscribe', async (req: FastifyRequest, reply: FastifyReply) => {
     const { token } = req.params as { token: string };
     // Resolve recipient from the tracking token so the event record is
@@ -185,6 +206,16 @@ export async function webhookRoutes(server: FastifyInstance) {
     await prisma.emailTrackingToken
       .updateMany({ where: { token }, data: { unsubscribed: true } })
       .catch(() => {});
+    if (trackToken?.tenantId && trackToken.recipient) {
+      await addSuppression({
+        tenantId: trackToken.tenantId,
+        channel: 'EMAIL',
+        contact: trackToken.recipient,
+        reason: 'UNSUBSCRIBED',
+        source: `token:${token}`,
+        note: 'Recipient clicked the unsubscribe link',
+      }).catch((err) => logger.warn({ err, token }, 'suppression add on unsubscribe failed'));
+    }
     return reply.type('text/html').send('<p>You have been unsubscribed.</p>');
   });
 }
@@ -200,4 +231,16 @@ async function resolveEmailAccount(
   });
   if (!token?.accountId) return null;
   return prisma.connectAccount.findUnique({ where: { id: token.accountId } });
+}
+
+// Resolve the tenant that owns a recipient (via its most recent tracking
+// token) so negative feedback can be written to the right suppression list
+// even when no sending account could be attributed.
+async function tenantIdForFeedback(recipient: string): Promise<string | null> {
+  const token = await prisma.emailTrackingToken.findFirst({
+    where: { recipient },
+    orderBy: { createdAt: 'desc' },
+    select: { tenantId: true },
+  });
+  return token?.tenantId ?? null;
 }

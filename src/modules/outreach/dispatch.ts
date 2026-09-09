@@ -23,6 +23,13 @@ import type {
   Plan,
 } from '@prisma/client';
 import { getBalance, chargeCredits, refundCredits } from '../billing/balance.js';
+import {
+  isSuppressed,
+} from '../compliance/suppression.js';
+import {
+  ComplianceBlockedError,
+  isComplianceBlocked,
+} from '../compliance/errors.js';
 
 // ── Dispatch request (mirrors Revor's request body) ──────────────────────
 
@@ -263,19 +270,16 @@ async function executeJob(jobId: string): Promise<void> {
 
     logger.info({ jobId, result }, 'Outreach job succeeded');
   } catch (err) {
-    const isGuard =
-      err instanceof DeliverabilityError
-        ? { code: err.code, retryable: err.retryable }
-        : null;
-    const code = isGuard ? isGuard.code : err instanceof Error ? err.message : 'action_failed';
-    const message = err instanceof Error ? err.message : 'The outreach action failed';
+    // Compliance blocks (suppressed recipient) and deliverability guards carry
+    // stable machine-readable codes; everything else falls back to the message.
+    const error = jobErrorPayload(err);
 
     await prisma.outreachJob.update({
       where: { id: jobId },
       data: {
         status: 'FAILED',
         finishedAt: new Date(),
-        error: { code, message, retryable: isGuard ? isGuard.retryable : false } as object,
+        error: error as object,
       },
     });
 
@@ -287,7 +291,7 @@ async function executeJob(jobId: string): Promise<void> {
         resource: 'OUTREACH_SEND',
         jobId,
         description: `Outreach refund — send failed (${charged} credit${charged > 1 ? 's' : ''})`,
-        metadata: { channel: job.channel, reason: code },
+        metadata: { channel: job.channel, reason: String(error.code ?? 'action_failed') },
       });
     }
 
@@ -340,6 +344,10 @@ async function dispatchToChannel(
     }
 
     case 'WHATSAPP': {
+      // Compliance gate: never message a suppressed phone again.
+      const suppressed = await isSuppressed(account.tenantId, 'WHATSAPP', recipient.phone!);
+      if (suppressed) throw new ComplianceBlockedError(suppressed);
+
       const config = account.config as unknown as WhatsAppChannelConfig;
       const result = await sendWhatsAppMessage(config, {
         to: recipient.phone!,
@@ -359,6 +367,10 @@ async function dispatchToChannel(
     }
 
     case 'LINKEDIN': {
+      // Compliance gate: a suppressed profile must not be re-approached.
+      const suppressed = await isSuppressed(account.tenantId, 'LINKEDIN', recipient.profileUrl!);
+      if (suppressed) throw new ComplianceBlockedError(suppressed);
+
       const config = account.config as unknown as LinkedInAccountConfig;
       const result = await sendLinkedInAction(
         config,
@@ -384,6 +396,33 @@ async function dispatchToChannel(
 }
 
 // ── LinkedIn post-like dispatch (Revor: POST /api/v1/outreach/linkedin/post-likes) ─
+
+/** Map any executor error to the persisted `OutreachJob.error` JSON shape. */
+function jobErrorPayload(err: unknown): Record<string, unknown> {
+  if (isComplianceBlocked(err)) {
+    const s = err.suppression;
+    return {
+      code: err.code,
+      message: err.message,
+      retryable: false,
+      // The matched suppression row is kept on the job as retrievable evidence.
+      compliance: {
+        suppressionId: s.id,
+        reason: s.reason,
+        contact: s.contact,
+        since: s.createdAt instanceof Date ? s.createdAt.toISOString() : String(s.createdAt),
+      },
+    };
+  }
+  if (err instanceof DeliverabilityError) {
+    return { code: err.code, message: err.message, retryable: err.retryable };
+  }
+  return {
+    code: 'action_failed',
+    message: err instanceof Error ? err.message : 'The outreach action failed',
+    retryable: false,
+  };
+}
 
 export async function createLinkedInPostLike(
   tenantId: string,
@@ -464,6 +503,11 @@ async function executePostLike(jobId: string, account: ConnectAccount): Promise<
 
   try {
     const recipient = job.recipient as { profileUrl: string };
+
+    // Compliance gate: skip profiles the tenant is no longer allowed to touch.
+    const suppressed = await isSuppressed(account.tenantId, 'LINKEDIN', recipient.profileUrl);
+    if (suppressed) throw new ComplianceBlockedError(suppressed);
+
     const config = account.config as unknown as LinkedInAccountConfig;
     const result = await likeRelevantPost(config, recipient.profileUrl);
 
@@ -481,7 +525,7 @@ async function executePostLike(jobId: string, account: ConnectAccount): Promise<
       data: {
         status: 'FAILED',
         finishedAt: new Date(),
-        error: { code: 'post_like_failed', message: err instanceof Error ? err.message : 'LinkedIn post-like failed', retryable: false } as object,
+        error: jobErrorPayload(err) as object,
       },
     });
 
