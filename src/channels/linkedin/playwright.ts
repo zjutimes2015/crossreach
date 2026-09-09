@@ -45,7 +45,8 @@ function acquire(tenantId: string): Promise<void> {
 }
 
 function release(tenantId: string): void {
-  const entry = pool.get(tenantId)!;
+  const entry = pool.get(tenantId);
+  if (!entry) return; // never leaked (e.g. after a crash mid-acquire)
   entry.count -= 1;
   globalInFlight -= 1;
   if (entry.count <= 0) pool.delete(tenantId);

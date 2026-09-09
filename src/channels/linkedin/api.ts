@@ -43,36 +43,67 @@ export interface LinkedInSendResult {
   error?: string;
 }
 
-/** Provisional action selection — refined by the Playwright layer using the
- *  live connection state seen on the profile page. */
-export function resolveAction(): LinkedInAction {
-  return 'message';
+export interface LinkedInDispatchOptions {
+  action?: LinkedInAction;
+  /** Tenant id for the per-tenant Playwright concurrency pool. */
+  tenantId?: string;
+}
+
+// ── Outcome predicates (pure, unit-testable) ────────────────────────────────
+
+export const LINKEDIN_ERR_NO_DM = 'no_dm_button';
+export const LINKEDIN_ERR_NO_CONNECT = 'no_connect_button';
+export const LINKEDIN_ERR_NO_POST = 'no_recent_post';
+
+/** True when the profile is reachable but we are NOT connected to it yet. */
+export function isNotConnected(result: LinkedInSendResult): boolean {
+  return result.status === 'skipped' && result.error === LINKEDIN_ERR_NO_DM;
+}
+
+/** True when we could not even find a "connect" entry point (private/restricted). */
+export function isUnreachable(result: LinkedInSendResult): boolean {
+  return result.status === 'skipped' && result.error === LINKEDIN_ERR_NO_CONNECT;
 }
 
 /**
  * Execute a LinkedIn action against a prospect.
- * Defaults to a DM when text is present; falls back to an invitation with the
- * same text used as the connection note when the prospect is not connected.
+ * Strategy (mirrors the product promise): DM when already connected; when the
+ * profile is reachable but NOT connected, the same text is reused as the note
+ * of a connection request (invitation fallback). Returns the actual outcome so
+ * the dispatch layer can decide success/skip/fail honestly.
  */
 export async function sendLinkedInAction(
   config: LinkedInAccountConfig,
   recipient: LinkedInRecipient,
   content: LinkedInContent,
-  action?: LinkedInAction,
+  opts: LinkedInDispatchOptions = {},
 ): Promise<LinkedInSendResult> {
-  const chosen = action ?? resolveAction();
   const text = content.text ?? '';
+  const tenantId = opts.tenantId ?? '';
+  const chosen = opts.action ?? (text ? 'message' : 'invitation');
 
-  if (chosen === 'message' && text) {
-    return sendMessage(config, recipient.profileUrl, text, '');
-  }
-  if (chosen === 'invitation' || (chosen === 'message' && !text)) {
-    return sendInvitation(config, recipient.profileUrl, text, '');
-  }
   if (chosen === 'post_like') {
-    return playwrightLike(config, recipient.profileUrl, '');
+    return playwrightLike(config, recipient.profileUrl, tenantId);
   }
-  return { resolvedAction: chosen, status: 'skipped', error: 'no_text_for_message' };
+
+  // Invitation requested explicitly (or there is nothing to DM).
+  if (chosen === 'invitation') {
+    if (!text) {
+      return { resolvedAction: 'invitation', status: 'skipped', error: 'no_text_for_invitation' };
+    }
+    return sendInvitation(config, recipient.profileUrl, text, tenantId);
+  }
+
+  // DM requested and we have text: only possible when already connected.
+  if (!text) {
+    return { resolvedAction: 'message', status: 'skipped', error: 'no_text_for_message' };
+  }
+  const dm = await sendMessage(config, recipient.profileUrl, text, tenantId);
+  if (isNotConnected(dm)) {
+    logger.info({ profileUrl: recipient.profileUrl }, 'LinkedIn not connected — falling back to a connection request');
+    return sendInvitation(config, recipient.profileUrl, text, tenantId);
+  }
+  return dm;
 }
 
 /**
@@ -83,7 +114,8 @@ export async function sendLinkedInAction(
 export async function likeRelevantPost(
   config: LinkedInAccountConfig,
   profileUrl: string,
+  opts: { tenantId?: string } = {},
 ): Promise<LinkedInSendResult> {
   logger.info({ profileUrl }, 'LinkedIn post-like dispatched to automation layer');
-  return playwrightLike(config, profileUrl, '');
+  return playwrightLike(config, profileUrl, opts.tenantId ?? '');
 }

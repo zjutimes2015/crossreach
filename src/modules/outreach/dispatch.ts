@@ -376,9 +376,16 @@ async function dispatchToChannel(
         config,
         { profileUrl: recipient.profileUrl! },
         { text: content.text as string | undefined },
+        { tenantId: account.tenantId },
       );
       if (result.status === 'failed') {
         throw new Error(result.error ?? 'LinkedIn action failed');
+      }
+      // A 'skipped' DM/invitation means we could not actually reach the prospect
+      // (private profile, no connect entry point, …). Fail the job honestly so
+      // the credit is refunded and the evidence chain shows what happened.
+      if (result.status === 'skipped') {
+        throw new Error(result.error ?? 'LinkedIn action skipped');
       }
       return {
         accountId: account.id,
@@ -386,7 +393,6 @@ async function dispatchToChannel(
         action: 'outreach',
         resolvedAction: result.resolvedAction,
         status: result.status,
-        ...(result.error ? { error: result.error } : {}),
       };
     }
 
@@ -509,7 +515,7 @@ async function executePostLike(jobId: string, account: ConnectAccount): Promise<
     if (suppressed) throw new ComplianceBlockedError(suppressed);
 
     const config = account.config as unknown as LinkedInAccountConfig;
-    const result = await likeRelevantPost(config, recipient.profileUrl);
+    const result = await likeRelevantPost(config, recipient.profileUrl, { tenantId: account.tenantId });
 
     await prisma.outreachJob.update({
       where: { id: jobId },

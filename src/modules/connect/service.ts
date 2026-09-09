@@ -12,6 +12,7 @@
 
 import { prisma } from '../../db/prisma.js';
 import { logger } from '../../utils/logger.js';
+import { config as runtimeConfig } from '../../config/index.js';
 import { PLANS } from '../billing/plans.js';
 import type {
   ConnectAccount,
@@ -402,8 +403,11 @@ async function testWhatsApp(
 ): Promise<TestResult> {
   // GET /v{N}/{phoneNumberId} returns the registered display phone number when
   // the access token is valid — a cheap liveness probe that doesn't send.
+  // Uses the configurable Graph base URL so local/dev and E2E can point at a
+  // fake Meta Graph instead of hard-coding facebook.com.
   const apiVersion = (config.apiVersion as string) ?? 'v18.0';
-  const url = `https://graph.facebook.com/${apiVersion}/${config.phoneNumberId}`;
+  const baseUrl = runtimeConfig.WHATSAPP_GRAPH_BASE_URL || 'https://graph.facebook.com';
+  const url = `${baseUrl}/${apiVersion}/${config.phoneNumberId}`;
   try {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${config.accessToken}` },

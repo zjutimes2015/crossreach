@@ -70,6 +70,16 @@ export async function startFakeGraphServer(): Promise<{
             messages: [{ id: `wamid.e2e.${counter}` }],
           }),
         );
+      } else if (req.method === 'GET') {
+        // Phone-number liveness probe used by connect-account tests:
+        // GET /v{version}/{phone_number_id}
+        res.end(
+          JSON.stringify({
+            id: '102290129340398',
+            display_phone_number: '15550000000',
+            verified_name: 'E2E WhatsApp Business',
+          }),
+        );
       } else {
         res.end(JSON.stringify({}));
       }
