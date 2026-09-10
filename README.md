@@ -103,7 +103,7 @@ Ad lead / ICP match
 ### Prerequisites
 
 - **Node.js** ≥ 20 (tested on 24)
-- **PostgreSQL** ≥ 14 (tested on 16)
+- **PostgreSQL** (production on **Neon** serverless Postgres; tested on 16)
 - A Meta WhatsApp Business account (for production; demo mode works without it)
 
 ### Install & run
@@ -113,12 +113,13 @@ Ad lead / ICP match
 git clone <your-repo-url> crossreach && cd crossreach
 npm install
 
-# 2. Start PostgreSQL (pick one)
-docker compose up -d                          # via docker-compose.yml
-#   OR
-#   set DATABASE_URL in .env to your existing Postgres
+# 2. Point at your Neon database
+#    In the Neon console (Dashboard → Connect) copy the connection string into
+#    .env as DATABASE_URL (add ?sslmode=require). Prefer the DIRECT endpoint;
+#    if you use the pooled endpoint also set DIRECT_URL for CLI/schema pushes.
+cp .env.example .env   # then edit DATABASE_URL (+ optional DIRECT_URL)
 
-# 3. Create the database schema
+# 3. Create the database schema (uses DIRECT_URL if set, else DATABASE_URL)
 npm run db:push
 
 # 4. Seed demo data (tenant + WhatsApp channel + admin user + API key)
@@ -144,7 +145,8 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `DATABASE_URL` | yes | Neon PostgreSQL connection string (keep `?sslmode=require`) |
+| `DIRECT_URL` | no | Neon **direct** endpoint — used by `prisma db push`/`migrate` when `DATABASE_URL` is the pooled endpoint |
 | `WHATSAPP_PHONE_NUMBER_ID` | prod | Meta WhatsApp Business phone number ID |
 | `WHATSAPP_ACCESS_TOKEN` | prod | Meta Graph API access token |
 | `WHATSAPP_VERIFY_TOKEN` | prod | Webhook verification token (any string you set) |

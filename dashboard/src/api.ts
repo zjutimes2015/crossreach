@@ -170,6 +170,30 @@ export interface BalanceSnapshot {
   plan: string;
 }
 
+// ── Creem (second PSP — fixed credit packs only) ────────────────────────────
+
+export interface CreemPack {
+  productId: string;
+  credits: number;
+  label: string;
+  priceCents?: number | null;
+}
+
+export const creemApi = {
+  /** Fixed packs the operator configured via CREEM_TOPUP_PACKS ([] = hidden). */
+  async packs(): Promise<CreemPack[]> {
+    const data = await api.get<{ packs: CreemPack[] }>('/billing/creem/packs');
+    return data?.packs ?? [];
+  },
+  /** Create a Creem Checkout session for a pack → redirect to the returned url. */
+  async checkout(productId: string, successUrl: string): Promise<{ checkoutId: string; url: string }> {
+    return api.post<{ checkoutId: string; url: string }>('/billing/creem/checkout', {
+      productId,
+      successUrl,
+    });
+  },
+};
+
 export interface UsageSummary {
   resource: string;
   credits: number;

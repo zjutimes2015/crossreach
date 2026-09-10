@@ -1,6 +1,7 @@
 // ── Inbound webhooks (no auth — each verifies its own signature) ─────────────
 //  WhatsApp   GET/POST /webhooks/whatsapp       (Meta signature)
 //  Stripe     POST    /webhooks/stripe          (Stripe signature)
+//  Creem      POST    /webhooks/creem           (HMAC-SHA256 signature)
 //  CRM        POST    /webhooks/hubspot         (CRM payloads → CDP events)
 //             POST    /webhooks/salesforce
 //             POST    /webhooks/notion
@@ -18,6 +19,7 @@ import {
   persistWebhookEvent,
 } from '../../modules/crm/webhooks.js';
 import { handleStripeWebhook } from '../../modules/billing/stripe.js';
+import { handleCreemWebhook } from '../../modules/billing/creem.js';
 import {
   recordEmailEvent,
   TRANS_PIXEL,
@@ -62,6 +64,19 @@ export async function webhookRoutes(server: FastifyInstance) {
       return reply.status(200).send({ ok: true });
     } catch (err) {
       logger.warn({ err }, 'Stripe webhook handling failed');
+      return reply.status(400).send({ ok: false, error: { code: 'webhook_error', message: String(err) } });
+    }
+  });
+
+  // ── Creem ──────────────────────────────────────────────────────────────────
+  server.post('/webhooks/creem', async (req: FastifyRequest, reply: FastifyReply) => {
+    const sig = req.headers['creem-signature'] as string | undefined;
+    if (!sig) return reply.status(400).send({ ok: false, error: { code: 'missing_creem_signature' } });
+    try {
+      await handleCreemWebhook(rawBodyOf(req), sig);
+      return reply.status(200).send({ ok: true });
+    } catch (err) {
+      logger.warn({ err }, 'Creem webhook handling failed');
       return reply.status(400).send({ ok: false, error: { code: 'webhook_error', message: String(err) } });
     }
   });

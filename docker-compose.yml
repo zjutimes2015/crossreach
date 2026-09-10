@@ -1,23 +1,10 @@
-version: '3.8'
+# CrossReach — infrastructure
+#
+# The application database runs on Neon (serverless Postgres) — see .env →
+# DATABASE_URL / DIRECT_URL. Redis below is only needed for BullMQ-backed jobs;
+# local dev runs fine without it (the app falls back to in-process scheduling).
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: crossreach-db
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: crossreach
-      POSTGRES_PASSWORD: crossreach_dev
-      POSTGRES_DB: crossreach
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crossreach"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: crossreach-redis
@@ -28,6 +15,3 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-volumes:
-  pgdata:

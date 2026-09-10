@@ -8,6 +8,10 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Neon: when DATABASE_URL points at the pooled (pgbouncer) endpoint, set
+  // DIRECT_URL to the direct endpoint so `prisma db push` / `migrate` bypass
+  // the pooler. Optional — falls back to DATABASE_URL when unset.
+  directUrl = env("DIRECT_URL")
 }
 
 // ── Multi-tenant ──────────────────────────────────────────────────────────

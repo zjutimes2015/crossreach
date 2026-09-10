@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, creemApi, type CreemPack } from '../api';
 
 interface PlanOption { id: string; label: string; monthlyPriceCents: number; monthlyCredits: number; emailInboxes: number; socialChannels: number; }
+
+const CREDITS_PER_DOLLAR = 10000; // matches backend modules/billing/stripe.ts
 
 export function BillingPage() {
   const [balance, setBalance] = useState<Record<string, unknown> | null>(null);
@@ -9,6 +11,7 @@ export function BillingPage() {
   const [stripe, setStripe] = useState<Record<string, unknown> | null>(null);
   const [plans, setPlans] = useState<PlanOption[]>([]);
   const [planInfo, setPlanInfo] = useState<Record<string, unknown> | null>(null);
+  const [creemPacks, setCreemPacks] = useState<CreemPack[]>([]);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -19,17 +22,19 @@ export function BillingPage() {
 
   const load = useCallback(async () => {
     try {
-      const [bal, tx, st, plan] = await Promise.all([
+      const [bal, tx, st, plan, packs] = await Promise.all([
         api.get<any>('/billing/balance'),
         api.get<any>('/billing/transactions?limit=12'),
         api.get<any>('/billing/stripe/status'),
         api.get<any>('/billing/plan'),
+        creemApi.packs().catch(() => [] as CreemPack[]),
       ]);
       setBalance(bal?.balance ?? null);
       setTxns(tx?.transactions ?? []);
       setStripe(st?.stripe ?? null);
       setPlans((st?.plans ?? []) as PlanOption[]);
       setPlanInfo(plan?.plan ?? null);
+      setCreemPacks(packs ?? []);
     } catch (err) {
       setMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Failed to load billing' });
     }
@@ -90,6 +95,27 @@ export function BillingPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const openCreemCheckout = async (pack: CreemPack) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await creemApi.checkout(pack.productId, `${baseUrl}?paid=creem`);
+      if (r.url) window.open(r.url, '_blank');
+      else setMsg({ kind: 'err', text: 'No checkout URL returned' });
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Creem checkout failed' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Display price: the pack's own price when configured, else the shared
+  // $5 / 10,000-credits rate so the dashboard preview always matches.
+  const packPrice = (p: CreemPack): string => {
+    const cents = p.priceCents != null ? p.priceCents : Math.round((p.credits / CREDITS_PER_DOLLAR) * 100);
+    return `$${(cents / 100).toFixed(2)}`;
   };
 
   return (
@@ -168,6 +194,25 @@ export function BillingPage() {
               <button className="btn sm" disabled={busy} onClick={handleTopUp}>Manual top-up +{topUpAmount.toLocaleString()}</button>
             </div>
           </div>
+
+          {creemPacks.length > 0 && (
+            <div style={{ marginTop: 14, borderTop: '1px dashed var(--border)', paddingTop: 14 }}>
+              <div className="row spread" style={{ marginBottom: 10 }}>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>Or pay with Creem — fixed packs:</span>
+              </div>
+              {creemPacks.map((p) => (
+                <div key={p.productId} className="row spread" style={{ padding: '7px 0', borderTop: '1px solid var(--border)' }}>
+                  <div>
+                    <div style={{ fontSize: 13.5 }}>{p.label}</div>
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>{p.credits.toLocaleString()} credits · {packPrice(p)}</div>
+                  </div>
+                  <button className="btn sm" disabled={busy} onClick={() => openCreemCheckout(p)}>
+                    Buy via Creem →
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="card">
